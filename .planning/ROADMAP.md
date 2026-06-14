@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A written diagnosis names which task, stage, or subprocess exceeds the cron time budget, supported by timing evidence (logged durations or a timed dry run)
   3. The `log()`/`obsidian_sync()` per-line subprocess lead and the stacked subprocess timeout totals are confirmed or ruled out as contributors with evidence, not assumption
 **Plans**: 3 plans
-  - [ ] 01-01-PLAN.md — Broken-pipe repro script + additive traceback hook (DIAG-01)
+  - [x] 01-01-PLAN.md — Broken-pipe repro script + additive traceback hook (DIAG-01)
   - [ ] 01-02-PLAN.md — Timing sweep evidence + ranked-contributors table (DIAG-02)
   - [ ] 01-03-PLAN.md — Synthesize DIAGNOSIS.md from both evidence sets (DIAG-01, DIAG-02)
 
@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Diagnosis | 0/3 | Planned | - |
+| 1. Diagnosis | 1/3 | In Progress|  |
 | 2. Reliability Fixes + Defect Removal | 0/TBD | Not started | - |
 | 3. Resilience | 0/TBD | Not started | - |
 | 4. Observability | 0/TBD | Not started | - |
