@@ -28,7 +28,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. A written diagnosis names the exact code path that produces `[Errno 32] Broken pipe` on `mlb_prop_monitor` runs, supported by a reproduction script or a captured real-run trace showing the error origin
   2. A written diagnosis names which task, stage, or subprocess exceeds the cron time budget, supported by timing evidence (logged durations or a timed dry run)
   3. The `log()`/`obsidian_sync()` per-line subprocess lead and the stacked subprocess timeout totals are confirmed or ruled out as contributors with evidence, not assumption
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 01-01-PLAN.md — Broken-pipe repro script + additive traceback hook (DIAG-01)
+  - [ ] 01-02-PLAN.md — Timing sweep evidence + ranked-contributors table (DIAG-02)
+  - [ ] 01-03-PLAN.md — Synthesize DIAGNOSIS.md from both evidence sets (DIAG-01, DIAG-02)
 
 ### Phase 2: Reliability Fixes + Defect Removal
 **Goal**: The confirmed broken-pipe root cause is fixed, cron jobs complete within defined time budgets, all 11 runner tasks run without uncaught failures, and the two stability-threatening defects (duplicate definitions + hardcoded path) are removed
@@ -81,7 +84,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Diagnosis | 0/TBD | Not started | - |
+| 1. Diagnosis | 0/3 | Planned | - |
 | 2. Reliability Fixes + Defect Removal | 0/TBD | Not started | - |
 | 3. Resilience | 0/TBD | Not started | - |
 | 4. Observability | 0/TBD | Not started | - |
