@@ -9,7 +9,7 @@ Requirements for this stability milestone. Each maps to a roadmap phase.
 
 ### Diagnosis
 
-- [ ] **DIAG-01**: Operator can point to the documented root cause of the `mlb_prop_monitor` `[Errno 32] Broken pipe` failure, supported by a reproduction or a captured real-run trace
+- [x] **DIAG-01**: Operator can point to the documented root cause of the `mlb_prop_monitor` `[Errno 32] Broken pipe` failure, supported by a reproduction or a captured real-run trace
 - [x] **DIAG-02**: Operator can point to the documented source of cron-job timeouts (which task / stage / subprocess exceeds budget), supported by timing evidence
 
 ### Reliability Fixes
@@ -67,7 +67,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DIAG-01 | Phase 1 | Pending |
+| DIAG-01 | Phase 1 | Complete |
 | DIAG-02 | Phase 1 | Complete |
 | FIX-01 | Phase 2 | Pending |
 | FIX-02 | Phase 2 | Pending |

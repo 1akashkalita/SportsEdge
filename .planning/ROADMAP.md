@@ -12,7 +12,7 @@ This milestone hardens an already-working Python sports-betting automation again
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Diagnosis** - Root-cause the broken pipe and timeout failures with evidence
+- [x] **Phase 1: Diagnosis** - Root-cause the broken pipe and timeout failures with evidence (completed 2026-06-15)
 - [ ] **Phase 2: Reliability Fixes + Defect Removal** - Eliminate the confirmed failure modes and remove stability-threatening dead code
 - [ ] **Phase 3: Resilience** - Add retries, hard timeouts, and SIGPIPE handling so transient faults are tolerated rather than fatal
 - [ ] **Phase 4: Observability** - Structured run logs, a heartbeat check, and pattern-aware alerting
@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
   - [x] 01-01-PLAN.md — Broken-pipe repro script + additive traceback hook (DIAG-01)
   - [x] 01-02-PLAN.md — Timing sweep evidence + ranked-contributors table (DIAG-02)
-  - [ ] 01-03-PLAN.md — Synthesize DIAGNOSIS.md from both evidence sets (DIAG-01, DIAG-02)
+  - [x] 01-03-PLAN.md — Synthesize DIAGNOSIS.md from both evidence sets (DIAG-01, DIAG-02)
 
 ### Phase 2: Reliability Fixes + Defect Removal
 **Goal**: The confirmed broken-pipe root cause is fixed, cron jobs complete within defined time budgets, all 11 runner tasks run without uncaught failures, and the two stability-threatening defects (duplicate definitions + hardcoded path) are removed
@@ -84,7 +84,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Diagnosis | 2/3 | In Progress|  |
+| 1. Diagnosis | 3/3 | Complete   | 2026-06-15 |
 | 2. Reliability Fixes + Defect Removal | 0/TBD | Not started | - |
 | 3. Resilience | 0/TBD | Not started | - |
 | 4. Observability | 0/TBD | Not started | - |
