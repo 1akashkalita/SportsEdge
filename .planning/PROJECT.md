@@ -76,7 +76,7 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 | Fix only stability-threatening defects; no broad monolith refactor | "Stable before changing stuff" | — Pending |
 | Defer all model/accuracy work to a later milestone | Build a reliable foundation first | — Pending |
 | Definition of done = all cron jobs + pipelines run correctly (no timeouts, no task-failed alerts) | The operator's stated bar for "stable" | — Pending |
-| Treat diagnosis as a first-class step (reproduce + root-cause before fixing) | The exact cause of the broken pipe is not yet pinned down | — Pending |
+| Treat diagnosis as a first-class step (reproduce + root-cause before fixing) | The exact cause of the broken pipe is not yet pinned down | ✓ Phase 1 — `DIAGNOSIS.md`: broken pipe = bare `JSON_RESULT=` print in `main()` (`sports_system_runner.py:5634`/`:5640`); dominant timeout = `send_telegram()` retry loop (30s×2 per call site, 24,923s max observed), NOT stacked subprocess timeouts (ruled out) |
 
 ## Evolution
 
@@ -96,4 +96,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-14 after initialization*
+*Last updated: 2026-06-15 after Phase 1 (Diagnosis) completion*
