@@ -13,7 +13,7 @@ This milestone hardens an already-working Python sports-betting automation again
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Diagnosis** - Root-cause the broken pipe and timeout failures with evidence (completed 2026-06-15)
-- [ ] **Phase 2: Reliability Fixes + Defect Removal** - Eliminate the confirmed failure modes and remove stability-threatening dead code
+- [x] **Phase 2: Reliability Fixes + Defect Removal** - Eliminate the confirmed failure modes and remove stability-threatening dead code (completed 2026-06-20)
 - [ ] **Phase 3: Resilience** - Add retries, hard timeouts, and SIGPIPE handling so transient faults are tolerated rather than fatal
 - [ ] **Phase 4: Observability** - Structured run logs, a heartbeat check, and pattern-aware alerting
 - [ ] **Phase 5: CI** - Automated test suite on every change, with correct interpreter and working directory
@@ -48,7 +48,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 02-02-PLAN.md — Remove dead duplicate injury_monitor / clv_tracker defs + DEF-01 regression test (DEF-01)
   - [x] 02-03-PLAN.md — Portable generate_projections BASE path + DEF-02 path-resolution test (DEF-02)
   - [x] 02-04-PLAN.md — FIX-01/FIX-02 regression tests + hardened repro harness (FIX-01, FIX-02)
-  - [ ] 02-05-PLAN.md — Run-all harness over all 11 tasks for the clean-pass proof (FIX-03)
+  - [x] 02-05-PLAN.md — Run-all harness over all 11 tasks for the clean-pass proof (FIX-03)
 
 ### Phase 3: Resilience
 **Goal**: Transient network failures are retried with backoff, broken-pipe / SIGPIPE conditions are caught and tolerated, every task enforces a hard internal time budget, and every fix from Phase 2 is protected by a regression test
@@ -90,7 +90,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Diagnosis | 3/3 | Complete   | 2026-06-15 |
-| 2. Reliability Fixes + Defect Removal | 4/5 | In Progress|  |
+| 2. Reliability Fixes + Defect Removal | 5/5 | Complete   | 2026-06-20 |
 | 3. Resilience | 0/TBD | Not started | - |
 | 4. Observability | 0/TBD | Not started | - |
 | 5. CI | 0/TBD | Not started | - |

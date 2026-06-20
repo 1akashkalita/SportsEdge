@@ -16,7 +16,7 @@ Requirements for this stability milestone. Each maps to a roadmap phase.
 
 - [x] **FIX-01**: The `[Errno 32] Broken pipe` failure no longer occurs in `prop_monitor` or any task sharing its root cause
 - [x] **FIX-02**: Cron jobs complete within a defined time budget instead of timing out
-- [ ] **FIX-03**: All 11 runner tasks run end-to-end without uncaught failures on a clean scheduled run
+- [x] **FIX-03**: All 11 runner tasks run end-to-end without uncaught failures on a clean scheduled run
 
 ### Defect Removal
 
@@ -71,7 +71,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DIAG-02 | Phase 1 | Complete |
 | FIX-01 | Phase 2 | Complete |
 | FIX-02 | Phase 2 | Complete |
-| FIX-03 | Phase 2 | Pending |
+| FIX-03 | Phase 2 | Complete |
 | DEF-01 | Phase 2 | Complete |
 | DEF-02 | Phase 2 | Complete |
 | RES-01 | Phase 3 | Pending |
