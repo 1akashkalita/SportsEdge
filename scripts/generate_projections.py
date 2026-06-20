@@ -2,7 +2,7 @@
 """Generate simple SportsEdge player prop projections from hit-rate DB.
 
 Outputs:
-- /Users/akashkalita/sports_picks/data/research/projections/{sport}/{sport}_projections_YYYY-MM-DD.json
+- ~/sports_picks/data/research/projections/{sport}/{sport}_projections_YYYY-MM-DD.json
 - Enriches today's workbook Player Props sheet with Projection / Edge / Over% / EV / Model Tier.
 """
 from __future__ import annotations
