@@ -213,11 +213,8 @@ def log(msg: str) -> None:
     line = f"[{now_iso()}] {msg}"
     with RUN_LOG.open("a") as f:
         f.write(line + "\n")
-    # Mirror every operational sports-system log line through canonical obsidian_sync.
-    try:
-        obsidian_sync({"trigger": "sports_run_log", "date": today_str(), "data": {"line": line}})
-    except Exception:
-        pass
+    # Accumulate log lines for the single end-of-task Obsidian summary sync in main()'s finally.
+    _task_log_lines.append(line)
     safe_print(line)
 
 
@@ -5674,6 +5671,22 @@ def main() -> int:
         log(f"[{args.task}] completed in {elapsed:.1f}s")
         if elapsed > 90:
             log(f"WARNING: {args.task} took {elapsed:.1f}s — consider further optimization")
+        # Single end-of-task Obsidian summary sync (D-04): fires on BOTH success and failure.
+        # One leaner note per task run instead of a subprocess per log line.
+        try:
+            task_name = getattr(args, "task", None) or "unknown"
+            log_excerpt = "\n".join(_task_log_lines[-50:])  # last 50 lines is a meaningful summary
+            obsidian_sync({
+                "trigger": "sports_run_summary",
+                "date": today_str(),
+                "data": {
+                    "task": task_name,
+                    "elapsed_s": round(elapsed, 1),
+                    "log_excerpt": log_excerpt,
+                },
+            })
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
