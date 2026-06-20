@@ -5611,19 +5611,17 @@ def main() -> int:
         log(f"[{args.task}] completed in {elapsed:.1f}s")
         if elapsed > 90:
             log(f"WARNING: {args.task} took {elapsed:.1f}s — consider further optimization")
-        # Single end-of-task Obsidian summary sync (D-04): fires on BOTH success and failure.
-        # One leaner note per task run instead of a subprocess per log line.
+        # Single end-of-task Obsidian sync (D-04): fires on BOTH success and failure.
+        # Uses the implemented `sports_run_log` trigger (appends to Meta/RunLog.md).
+        # CR-01 fix: the prior trigger name was not wired into the handler and was silently dropped.
         try:
             task_name = getattr(args, "task", None) or "unknown"
-            log_excerpt = "\n".join(_task_log_lines[-50:])  # last 50 lines is a meaningful summary
+            log_excerpt = "\n".join(_task_log_lines[-50:])
+            summary_line = f"[{task_name}] completed in {round(elapsed, 1)}s\n{log_excerpt}"
             obsidian_sync({
-                "trigger": "sports_run_summary",
+                "trigger": "sports_run_log",
                 "date": today_str(),
-                "data": {
-                    "task": task_name,
-                    "elapsed_s": round(elapsed, 1),
-                    "log_excerpt": log_excerpt,
-                },
+                "data": {"line": summary_line},
             })
         except Exception:
             pass
