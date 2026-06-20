@@ -3621,66 +3621,6 @@ def prop_monitor(sport: str) -> dict[str, Any]:
     }
 
 
-def injury_monitor(sport: str) -> dict[str, Any]:
-    ensure_dirs()
-    path = ensure_workbook(sport)
-    wb = safe_load_workbook(path)
-    injuries = wb["Injury Baseline"]
-    picks = wb["Picks"]
-    checked = 0
-    status_changes: list[dict[str, Any]] = []
-    for r in range(2, injuries.max_row + 1):
-        player = injuries.cell(r, 3).value
-        if not player:
-            continue
-        old_status = injuries.cell(r, 5).value or "UNKNOWN"
-        current_status = injuries.cell(r, 6).value or "UNKNOWN"
-        if str(old_status).strip().upper() != str(current_status).strip().upper():
-            affected = []
-            for pr in range(2, picks.max_row + 1):
-                selection = str(picks.cell(pr, 8).value or "")
-                if str(player).lower() in selection.lower():
-                    affected.append(selection)
-                if len(affected) >= 5:
-                    break
-            rec = "skip affected picks" if str(current_status).upper() not in ("ACTIVE", "AVAILABLE", "PROBABLE", "UNKNOWN") else "watch"
-            status_changes.append({
-                "player": player,
-                "old_status": old_status,
-                "new_status": current_status,
-                "affected_picks": affected,
-                "recommendation": rec,
-            })
-            injuries.cell(r, 5).value = current_status
-        injuries.cell(r, 6).value = current_status
-        injuries.cell(r, 7).value = "Baseline workbook; no blocking injury scrape error"
-        injuries.cell(r, 8).value = now_iso()
-        injuries.cell(r, 9).value = "Status change detected" if status_changes and status_changes[-1].get("player") == player else "No impact detected"
-        checked += 1
-    save_workbook_atomic(wb, path)
-    log(f"{sport.upper()} injury monitor complete: players_checked={checked} status_changes={len(status_changes)} workbook={path}")
-    return {"status": "ok", "task": f"{sport}_injury_monitor", "players_checked": checked, "status_changes": status_changes, "workbook": str(path)}
-
-
-def clv_tracker(sport: str) -> dict[str, Any]:
-    ensure_dirs()
-    games, headers = odds_api(sport)
-    path = ensure_workbook(sport)
-    wb = safe_load_workbook(path)
-    clv = wb["CLV Tracker"]
-    date = today_str()
-    added = 0
-    for game in games:
-        gid = game.get("id") or f"{game.get('away_team')}@{game.get('home_team')}@{game.get('commence_time')}"
-        ref = f"{game.get('away_team')} @ {game.get('home_team')}"
-        row = [date, sport.upper(), gid, ref, "", "", "", "RECORDED", "Pending", ""]
-        if append_unique(clv, row, 3, gid):
-            added += 1
-    save_workbook_atomic(wb, path)
-    log(f"{sport.upper()} CLV tracker complete: games={len(games)} rows_added={added} workbook={path} credits_remaining={headers['credits_remaining']}")
-    return {"status": "ok", "task": f"{sport}_clv_tracker", "games": len(games), "rows_added": added, "workbook": str(path), "credits_remaining": headers["credits_remaining"]}
-
-
 def odds_scores(sport: str, days_from: int = 1) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Fetch settled/live event scores/status from Odds-API.io events endpoint."""
     if not os.environ.get("ODDS_API_IO_KEY"):
