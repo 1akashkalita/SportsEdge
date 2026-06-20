@@ -26,15 +26,15 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 - ✓ Excel-workbook persistence with schema migration, atomic saves, `fcntl` locking, and dated backups — existing
 - ✓ Defensive SKIP-state handling + single-process lock + `JSON_RESULT` stdout contract — existing
 - ✓ `unittest`-based test suite (`scripts/test_*.py`, incl. stage1–5 end-to-end pipeline tests) — existing
+- ✓ Broken-pipe `[Errno 32]` failure fixed — all bare stdout prints routed through `safe_print`; a completed task survives a closed cron pipe with no spurious `TASK FAILED` (regression-tested) — Phase 2 (FIX-01)
+- ✓ All 11 runner tasks run clean end-to-end — proven by `scripts/run_all_tasks.py` live pass (11/11 on 2026-06-20) — Phase 2 (FIX-03)
+- ✓ Stability-threatening defects removed — duplicate `injury_monitor`/`clv_tracker` defs deleted (DEF-01); `generate_projections.py` BASE de-hardcoded to `Path.home()` (DEF-02) — Phase 2
 
 ### Active
 
 <!-- This milestone. Hypotheses until shipped and validated. -->
 
-- [ ] Cron-job timeouts are root-caused and eliminated — every task completes within a defined time budget
-- [ ] The `[Errno 32] Broken pipe` failure (seen on `mlb_prop_monitor`) and any shared root cause are fixed — no more `❌ TASK FAILED` from it
-- [ ] All 11 runner tasks and their pipelines run correctly end-to-end on schedule
-- [ ] Stability-threatening defects fixed (duplicate `injury_monitor` / `clv_tracker` definitions; hardcoded `BASE` path in `generate_projections.py`)
+- [ ] Cron-job timeouts fully eliminated — the dominant contributors (Telegram retry loop, per-line Obsidian subprocess) were bounded in Phase 2 (FIX-02: 10s timeout + circuit-breaker, single task-end vault sync); the general hard self-timeout / `SIGPIPE` safety net lands in Phase 3
 - [ ] Safety net added: retries/backoff on network calls, sane + hard timeouts, broken-pipe/`SIGPIPE` handling, and a regression test for each fix
 - [ ] Observability added: structured run logs, a health/heartbeat check, and alerting on failure patterns
 - [ ] CI runs the test suite to catch breakage before cron does
@@ -77,6 +77,7 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 | Defer all model/accuracy work to a later milestone | Build a reliable foundation first | — Pending |
 | Definition of done = all cron jobs + pipelines run correctly (no timeouts, no task-failed alerts) | The operator's stated bar for "stable" | — Pending |
 | Treat diagnosis as a first-class step (reproduce + root-cause before fixing) | The exact cause of the broken pipe is not yet pinned down | ✓ Phase 1 — `DIAGNOSIS.md`: broken pipe = bare `JSON_RESULT=` print in `main()` (`sports_system_runner.py:5634`/`:5640`); dominant timeout = `send_telegram()` retry loop (30s×2 per call site, 24,923s max observed), NOT stacked subprocess timeouts (ruled out) |
+| Bound the diagnosed failure modes minimally rather than install the general safety net in the same phase | Fix the proven, dominant contributors first; defer retries/hard-timeouts/SIGPIPE to Phase 3 so regression tests cover the actual fix paths | ✓ Phase 2 — `safe_print` stdout sweep (FIX-01), `send_telegram` 10s timeout + per-invocation circuit-breaker, Obsidian decoupled to one task-end `sports_run_log` sync (FIX-02), duplicate defs removed (DEF-01), `Path.home()` base (DEF-02); live 11/11 task pass (FIX-03) |
 
 ## Evolution
 
@@ -96,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-15 after Phase 1 (Diagnosis) completion*
+*Last updated: 2026-06-20 after Phase 2 (Reliability Fixes + Defect Removal) completion*
