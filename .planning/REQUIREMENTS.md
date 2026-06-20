@@ -21,7 +21,7 @@ Requirements for this stability milestone. Each maps to a roadmap phase.
 ### Defect Removal
 
 - [ ] **DEF-01**: The duplicate `injury_monitor` / `clv_tracker` definitions are resolved — dead earlier definitions removed and the active behavior confirmed correct by tests
-- [ ] **DEF-02**: `generate_projections.py` resolves its base path via `Path.home()` (no hardcoded user path) so it runs regardless of path prefix
+- [x] **DEF-02**: `generate_projections.py` resolves its base path via `Path.home()` (no hardcoded user path) so it runs regardless of path prefix
 
 ### Resilience
 
@@ -73,7 +73,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | FIX-02 | Phase 2 | Complete |
 | FIX-03 | Phase 2 | Pending |
 | DEF-01 | Phase 2 | Pending |
-| DEF-02 | Phase 2 | Pending |
+| DEF-02 | Phase 2 | Complete |
 | RES-01 | Phase 3 | Pending |
 | RES-02 | Phase 3 | Pending |
 | RES-03 | Phase 3 | Pending |
