@@ -269,7 +269,7 @@ def send_telegram(message: str, retries: int = 2, backoff: int = 5) -> bool:
     _telegram_breaker["consecutive_failures"] += 1
     if _telegram_breaker["consecutive_failures"] >= 3 and not _telegram_breaker["tripped"]:
         _telegram_breaker["tripped"] = True
-        log(f"Telegram circuit-breaker tripped — alerts suppressed — Telegram unreachable (suppressed so far: {_telegram_breaker['suppressed']})")
+        log("Telegram circuit-breaker tripped — alerts suppressed — Telegram unreachable")
     return False
 
 
@@ -5611,6 +5611,10 @@ def main() -> int:
         log(f"[{args.task}] completed in {elapsed:.1f}s")
         if elapsed > 90:
             log(f"WARNING: {args.task} took {elapsed:.1f}s — consider further optimization")
+        # WR-01: emit the REAL suppressed count at task end so operators can see it in logs.
+        # The trip-time message cannot know the count — suppression accrues after trip.
+        if _telegram_breaker["tripped"] and _telegram_breaker["suppressed"]:
+            log(f"Telegram breaker suppressed {_telegram_breaker['suppressed']} alerts this run — Telegram unreachable")
         # Single end-of-task Obsidian sync (D-04): fires on BOTH success and failure.
         # Uses the implemented `sports_run_log` trigger (appends to Meta/RunLog.md).
         # CR-01 fix: the prior trigger name was not wired into the handler and was silently dropped.
