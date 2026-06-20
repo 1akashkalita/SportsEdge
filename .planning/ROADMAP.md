@@ -44,7 +44,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Only one definition of `injury_monitor` and one of `clv_tracker` exist in `sports_system_runner.py`; the active behavior is confirmed correct by the existing tests
   5. `generate_projections.py` uses `Path.home()` for its base path and runs successfully from any user or path prefix
 **Plans**: 5 plans
-  - [ ] 02-01-PLAN.md — Runner reliability fixes: safe_print sweep + Telegram circuit-breaker + Obsidian decouple (FIX-01, FIX-02)
+  - [x] 02-01-PLAN.md — Runner reliability fixes: safe_print sweep + Telegram circuit-breaker + Obsidian decouple (FIX-01, FIX-02)
   - [ ] 02-02-PLAN.md — Remove dead duplicate injury_monitor / clv_tracker defs + DEF-01 regression test (DEF-01)
   - [ ] 02-03-PLAN.md — Portable generate_projections BASE path + DEF-02 path-resolution test (DEF-02)
   - [ ] 02-04-PLAN.md — FIX-01/FIX-02 regression tests + hardened repro harness (FIX-01, FIX-02)
@@ -90,7 +90,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Diagnosis | 3/3 | Complete   | 2026-06-15 |
-| 2. Reliability Fixes + Defect Removal | 0/5 | Not started | - |
+| 2. Reliability Fixes + Defect Removal | 1/5 | In Progress|  |
 | 3. Resilience | 0/TBD | Not started | - |
 | 4. Observability | 0/TBD | Not started | - |
 | 5. CI | 0/TBD | Not started | - |
