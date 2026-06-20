@@ -1254,7 +1254,7 @@ def run_fetch_prizepicks(sport: str) -> None:
     cmd = [sys.executable, str(script), "--league", sport, "--odds-type", "standard", "--output", "json"]
     cp = subprocess.run(cmd, text=True, capture_output=True, timeout=120)
     if cp.stdout:
-        print(cp.stdout.rstrip())
+        safe_print(cp.stdout.rstrip())
     if cp.stderr:
         print(cp.stderr.rstrip(), file=sys.stderr)
     if cp.returncode != 0:
@@ -1271,7 +1271,7 @@ def run_fetch_dfs_props(sport: str) -> None:
     cmd = [sys.executable, str(script), "--league", sport]
     cp = subprocess.run(cmd, text=True, capture_output=True, timeout=300)
     if cp.stdout:
-        print(cp.stdout.rstrip())
+        safe_print(cp.stdout.rstrip())
     if cp.stderr:
         print(cp.stderr.rstrip(), file=sys.stderr)
     if cp.returncode != 0:
@@ -5618,7 +5618,7 @@ def main() -> int:
     if args.test_telegram:
         ok = send_telegram(f"✅ sports_system_runner Telegram test {now_iso()}")
         result = {"status": "ok" if ok else "error", "task": "test_telegram", "telegram_sent": ok}
-        print("JSON_RESULT=" + json.dumps(result, sort_keys=True))
+        safe_print("JSON_RESULT=" + json.dumps(result, sort_keys=True))
         return 0 if ok else 1
     if not args.task:
         parser.error("--task is required unless --test-telegram is used")
@@ -5631,7 +5631,7 @@ def main() -> int:
             with task_workbook_locks(args.task):
                 result = run_task(args.task)
         dispatch_alerts(args.task, result)
-        print("JSON_RESULT=" + json.dumps(result, sort_keys=True))
+        safe_print("JSON_RESULT=" + json.dumps(result, sort_keys=True))
         return 0
     except Exception as e:
         err = {"status": "error", "task": args.task, "error": str(e), "traceback": traceback.format_exc()}
@@ -5645,7 +5645,7 @@ def main() -> int:
             pass
         log(f"ERROR task={args.task}: {e}")
         send_telegram(f"❌ SPORTS TASK FAILED: {args.task}\nError: {e}")
-        print("JSON_RESULT=" + json.dumps(err, sort_keys=True))
+        safe_print("JSON_RESULT=" + json.dumps(err, sort_keys=True))
         return 1
     finally:
         elapsed = time.time() - task_start_time
