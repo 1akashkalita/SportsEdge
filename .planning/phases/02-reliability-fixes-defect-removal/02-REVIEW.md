@@ -18,6 +18,16 @@ findings:
   info: 3
   total: 8
 status: issues_found
+resolution:
+  resolved:
+    - "CR-01 — finally-block Obsidian sync switched to the implemented `sports_run_log` trigger; trigger-contract regression test added (test_cr01_obsidian_trigger_contract.py). Commit e693d02."
+    - "WR-01 — real suppressed-alert count now logged in one greppable end-of-run line; misleading trip-time `(suppressed so far: 0)` removed. Commit 03ca318."
+  deferred:
+    - "WR-02 — repro nonce-scan concurrent ERROR misattribution (CI robustness)"
+    - "WR-03 — FIX-02 timeout test mocks requests.post (timeout=10 not exercised)"
+    - "WR-04 — run_all_tasks.py opt-in guard for live production tasks"
+    - "INFO-01/02/03 — see body"
+  verified: "18/18 targeted tests pass post-fix (cr01 contract, fix01, fix02, def01, def02)"
 ---
 
 # Phase 2: Code Review Report
