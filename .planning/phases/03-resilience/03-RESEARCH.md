@@ -592,46 +592,58 @@ Python 3.14 already disables the default SIGPIPE disposition and raises `BrokenP
 
 Fault injection: monkeypatch the subprocess call inside `run_fetch_dfs_props()` / `run_build_hit_rate_db()` / `run_generate_projections()` to fail once (non-zero exit), then succeed.
 
+> **PATCH TARGET = `subprocess.Popen`, NOT `subprocess.run`.** The RES-01 helper
+> `_subprocess_run_with_retry` calls `subprocess.Popen` (so RES-03's SIGALRM handler can kill the
+> in-flight child via `_current_subprocess`). Patching `subprocess.run` would leave the real
+> `Popen` call un-intercepted → `call_count` never increments → the test passes even on pre-fix
+> code, silently violating D-11. The fake returns a fake-Popen exposing the attributes the helper
+> reads: `.wait(timeout=...)`, `.returncode`, `.kill()`, `.stdout`/`.stderr`. (The exact attribute
+> set must match Plan 03-01's helper — read the implemented helper before finalizing the fake.)
+
 ```python
+class _FakePopen:
+    """Minimal stand-in for subprocess.Popen exposing only what the helper reads."""
+    def __init__(self, returncode, *, raise_timeout=False):
+        self.returncode = returncode
+        self._raise_timeout = raise_timeout
+        self.stdout = io.BytesIO(b"")
+        self.stderr = io.BytesIO(b"")
+    def wait(self, timeout=None):
+        if self._raise_timeout:
+            raise subprocess.TimeoutExpired(cmd="fake", timeout=timeout or 0)
+        return self.returncode
+    def kill(self): pass
+
 class TestRes01SubprocessRetry(unittest.TestCase):
 
     def test_subprocess_retry_on_nonzero_exit(self):
-        """First call exits 1, second call exits 0 — assert second call happens and stage succeeds."""
+        """First Popen exits 1, second exits 0 — assert the helper constructed Popen twice."""
         call_count = 0
-        original_run = subprocess.run
-
-        def fake_run(cmd, *args, **kwargs):
+        def fake_popen(cmd, *args, **kwargs):
             nonlocal call_count
             call_count += 1
-            if call_count == 1:
-                # First attempt: simulate hard failure
-                return subprocess.CompletedProcess(cmd, returncode=1, stdout=b"", stderr=b"error")
-            return original_run(cmd, *args, **kwargs)
-
-        with patch("subprocess.run", side_effect=fake_run):
-            # Call the stage; should succeed on retry
-            result = runner.run_fetch_dfs_props("nba")
-            # (adjust depending on return type)
-
-        self.assertEqual(call_count, 2, "Expected exactly 2 subprocess calls (1 failure + 1 retry)")
+            return _FakePopen(1 if call_count == 1 else 0)
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            runner.run_fetch_dfs_props("nba")
+        self.assertEqual(call_count, 2, "Expected exactly 2 Popen constructions (1 failure + 1 retry)")
 
     def test_no_retry_on_clean_exit(self):
-        """Exit 0 with empty output is NOT retried."""
+        """Exit 0 (incl. empty board) is NOT retried (D-02)."""
         call_count = 0
-        def fake_run(cmd, *args, **kwargs):
+        def fake_popen(cmd, *args, **kwargs):
             nonlocal call_count
             call_count += 1
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
-        with patch("subprocess.run", side_effect=fake_run):
+            return _FakePopen(0)
+        with patch("subprocess.Popen", side_effect=fake_popen):
             runner.run_fetch_dfs_props("nba")
         self.assertEqual(call_count, 1, "Exit 0 should NOT be retried — empty board is legitimate")
 
     def test_after_one_retry_fails_raises(self):
-        """Two consecutive failures → stage raises (not silently continues)."""
-        def fake_run(cmd, *args, **kwargs):
-            return subprocess.CompletedProcess(cmd, returncode=1, stdout=b"", stderr=b"fail")
-        with patch("subprocess.run", side_effect=fake_run):
-            with self.assertRaises((RuntimeError, Exception)):
+        """Two consecutive hard failures → stage raises/propagates (no silent continue)."""
+        def fake_popen(cmd, *args, **kwargs):
+            return _FakePopen(1)
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            with self.assertRaises(Exception):
                 runner.run_fetch_dfs_props("nba")
 ```
 
@@ -905,7 +917,9 @@ Note: the actual implementation may be simpler — using `subprocess.run()` dire
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three questions below are resolved (orchestrator follow-up, 2026-06-20). None remain open.
 
 1. **Hermes kill window for sports jobs — RESOLVED (no longer open).**
    - CONFIRMED 2026-06-20: hard **120 s** `subprocess.run` timeout, no override (env unset, no
@@ -917,15 +931,29 @@ Note: the actual implementation may be simpler — using `subprocess.run()` dire
      runs trip RES-03 post-fix, raise `cron.script_timeout_seconds` in `~/.hermes/config.yaml`.
      That is a Hermes-config change, not a sports_picks code change.
 
-2. **SIGALRM interaction with `fcntl.LOCK_EX` during task_workbook_locks acquisition**
-   - What we know: SIGALRM interrupts `fcntl.flock()` cleanly (tested), Python context managers run `__exit__` on exception (spec), so lock files are released
-   - What's unclear: whether a partially-acquired workbook lock stack (e.g., first path locked, second path blocked when SIGALRM fires) cleans up the first lock in `task_workbook_locks`'s `finally`
-   - Recommendation: read `task_workbook_locks()` at `sports_system_runner.py:5533-5544` — the `finally` block calls `cm.__exit__(None, None, None)` for each acquired context manager. This should clean up correctly. Low risk; verify in the test.
+2. **SIGALRM interaction with `fcntl.LOCK_EX` during task_workbook_locks acquisition — RESOLVED.**
+   - SIGALRM interrupts `fcntl.flock()` cleanly (tested), and `task_workbook_locks()`
+     (`sports_system_runner.py:5536-5544`, read directly) is a `try/finally` generator CM that
+     appends each `cm` to `stack` **only after** `cm.__enter__()` succeeds, then its `finally`
+     releases every cm in `stack` via `cm.__exit__(None, None, None)` in reverse order.
+   - **RESOLVED:** on a SIGALRM-raised `TaskTimeoutError`, the `with task_workbook_locks(...)` in
+     `main()` triggers this `finally`, so **all fully-acquired locks are released**. A lock
+     interrupted mid-`__enter__` (path N's `flock` blocking when the alarm fires) was never added
+     to `stack`; `flock` either completed (held → released by `finally` if it had been appended) or
+     did not (no lock held). Worst case is the same harmless orphaned-`.lock`/`.tmp` state the
+     atomic-save invariant already tolerates. No partial-lock leak path. Low residual risk; a
+     post-timeout stale-`.lock` assertion is optional, not required.
 
-3. **Test isolation for SIGALRM tests**
-   - What we know: `test_res03` must test SIGALRM behavior; in-process SIGALRM bleeds between test cases
-   - What's unclear: exact subprocess-based test structure
-   - Recommendation: spawn the runner as a subprocess with a patched/monkeypatched task (via env var or a test-mode flag). The Phase-2 test pattern (`subprocess.Popen` + wait) is the right model.
+3. **Test isolation for SIGALRM tests — RESOLVED.**
+   - `test_res03` runs the runner in a **child subprocess** (SIGALRM is process-global; in-process
+     would bleed between cases). The hang is injected by a **generated child shim** that rebinds
+     `r.verify = lambda: time.sleep(9999)` and sets `r.TASK_TIMEOUTS["verify"] = 3` before calling
+     `r.main()` — viable because `run_task` builds its dispatch `mapping` at call-time referencing
+     `verify` by name (`sports_system_runner.py:5559`) and `TASK_TIMEOUTS` is a module-level dict.
+     **No env-var hook or test-mode branch is added to the production runner** (minimal-invasive).
+     See 03-PATTERNS.md "Adaptation for test_res03" for the confirmed shim. This is the D-11-rigorous
+     mechanism: pre-fix the child never exits (harness `proc.wait(timeout=budget+30)` raises);
+     post-fix SIGALRM fires at 3 s → `⏱ TASK TIMED OUT` → exit 1.
 
 ---
 

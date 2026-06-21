@@ -23,7 +23,7 @@
 
 **Analog:** `scripts/test_fix02_telegram_circuit_breaker.py`
 
-**Why:** test_fix02 is the canonical monkeypatch-the-module-attribute + recording-pattern test. test_res01 mirrors it exactly: import runner via `importlib`, monkeypatch a module function (here `subprocess.run` inside a runner stage function instead of `requests.post`), call the stage, assert call count and error propagation.
+**Why:** test_fix02 is the canonical monkeypatch-the-module-attribute + recording-pattern test. test_res01 mirrors it exactly: import runner via `importlib`, monkeypatch a module function — **`subprocess.Popen`** (NOT `subprocess.run`: the RES-01 helper `_subprocess_run_with_retry` uses `Popen` so RES-03's handler can kill the in-flight child via `_current_subprocess`) inside a runner stage function instead of `requests.post` — call the stage, assert call count and error propagation.
 
 **Imports pattern** (`scripts/test_fix02_telegram_circuit_breaker.py` lines 27-51):
 ```python
@@ -102,7 +102,7 @@ matching = [line for line in log_lines if "alerts suppressed" in line.lower()]
 self.assertTrue(len(matching) > 0, ...)
 ```
 
-**Adaptation for test_res01:** Replace `patch.object(requests, "post", ...)` with `patch("subprocess.run", side_effect=...)` or a nonlocal `call_count` closure. The key pattern is the same: count calls, assert the retry wrapper called twice on first failure and once on clean exit. The stage functions (`run_fetch_dfs_props`, `run_build_hit_rate_db`, `run_generate_projections`) are accessed as `runner.run_fetch_dfs_props(...)` after `importlib` load. Use `subprocess.CompletedProcess(cmd, returncode=1)` to simulate hard failure.
+**Adaptation for test_res01:** Replace `patch.object(requests, "post", ...)` with **`patch("subprocess.Popen", ...)`** (or `patch.object(runner.subprocess, "Popen", ...)`) plus a nonlocal `call_count` closure. **Do NOT patch `subprocess.run`** — the RES-01 helper calls `subprocess.Popen` (so the SIGALRM handler can kill `_current_subprocess`); patching `subprocess.run` would leave the real `Popen` call un-intercepted, so `call_count` stays at the wrong value and the test passes even on pre-fix code (silently violating D-11). The fake must return a fake-Popen object exposing the attributes the helper reads: `.wait(timeout=...)` (return the simulated returncode or raise `subprocess.TimeoutExpired`), `.returncode`, `.kill()`, `.stdout`/`.stderr`. The key pattern is the same: count `Popen` constructions, assert the retry wrapper constructed it twice on first hard failure and once on clean exit (exit 0 NOT retried, D-02). The stage functions are accessed as `runner.run_fetch_dfs_props(...)` after `importlib` load.
 
 ---
 
@@ -243,9 +243,31 @@ except subprocess.TimeoutExpired:
     self.fail(f"Runner subprocess timed out after {_WAIT_TIMEOUT:.0f}s ...")
 ```
 
-**Adaptation for test_res03:** The task that hangs needs to be injectable. Options (in preference order):
-1. Use an env var checked by the runner to override the `verify` task body with a `time.sleep(9999)` stub — requires a small test-mode hook in the runner.
-2. Use `--task verify` with the normal runner; the SIGALRM budget for `verify` is 60s — the test asserts the subprocess exits within 65s (60s budget + 5s margin for the clean-shutdown sequence). This works without any runner modification if the `verify` task's clean runtime is well under 60s and the SIGALRM fires as designed.
+**Adaptation for test_res03 — CONFIRMED mechanism (no production-runner change):** The task that
+hangs is injected via a **generated child shim script**, NOT an env-var hook in the runner. The
+test writes a tiny temp `.py` shim that runs in the isolated child process:
+
+```
+import sports_system_runner as r, time, sys
+r.verify = lambda: time.sleep(9999)        # rebind the module-level task fn
+r.TASK_TIMEOUTS["verify"] = 3              # short budget so the test is fast
+sys.exit(r.main())                          # main() arms SIGALRM(3) → fires → kills child → exits
+```
+Spawn that shim with `subprocess.Popen([sys.executable, shim_path, "--task", "verify"], ...)`.
+This works because `run_task` builds its dispatch `mapping` at call-time and references `verify`
+by name (`sports_system_runner.py:5559`), so rebinding `r.verify` before `r.main()` runs takes
+effect; and `TASK_TIMEOUTS` is a module-level dict read by `main()` at call-time. SIGALRM is
+process-global but harmless here — the shim child runs exactly one task then exits. **No env-var
+hook or test-mode branch is added to the production runner** (honors the minimal-invasive
+constraint). The `time.sleep(9999)` cannot complete, so the test FAILS on pre-fix code (no SIGALRM
+→ child never exits → harness `proc.wait(timeout=_WAIT_TIMEOUT)` raises) and PASSES post-fix
+(SIGALRM fires at 3s → `⏱ TASK TIMED OUT` → exit 1) — satisfying D-11.
+
+Set `_WAIT_TIMEOUT = budget + 30` (≈33s here) so the harness gives the clean-shutdown sequence
+headroom but still fails fast if SIGALRM never fires. The healthy-task counter-case (3-RES03-b)
+spawns the same shim WITHOUT the hang rebind (real `verify`, short budget large enough for a clean
+run, e.g. leave `verify` at its real 60s budget or set a comfortable value) and asserts no
+`TIMED OUT`/`TASK FAILED` and exit 0.
 
 The test assertions are:
 - `self.assertLess(elapsed, budget + margin)` — timeout fired
