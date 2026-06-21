@@ -14,14 +14,19 @@ findings:
   info: 2
   total: 8
 status: resolved
-resolution_commit: 04f72c6
+resolution_commit: 04f72c6, 6696692, 2a4cfcf
 resolution_note: >
   CR-01, CR-02, WR-01, WR-02, WR-04, IN-01 fixed in 04f72c6 (helper rewritten to
   translate capture_output -> PIPE and drain via communicate(); real-child tests
-  added; full suite green at baseline 2 failed / 224 passed). WR-03 ESCALATED: the
-  90s/80s/75s/60s RES-03 budgets are far below observed task runtimes (mlb_daily_picks
-  509s, check_results 394s, mlb_prop_monitor up to 340s) — pending an operator budget
-  decision before RES-03 ships. IN-02 left as a defensive sentinel (acceptable).
+  added; full suite green at baseline 2 failed / 224 passed). WR-03 resolved in
+  6696692 + 2a4cfcf: direct inspection of the live Hermes install confirmed the 120s
+  hard-kill is REAL and active (scheduler.py _DEFAULT_SCRIPT_TIMEOUT=120, no config
+  override) -- the long "completed in 509s" run_log lines are orphaned-runner
+  artifacts, not clean completions. Per operator decision the external ceiling was
+  raised (cron.script_timeout_seconds 120 -> 720 in ~/.hermes/config.yaml, OUTSIDE
+  the repo, scheduler restart required) so genuinely-slow tasks (~509s) can finish,
+  and RES-03 budgets set to 660s uniform to self-terminate cleanly just under the
+  720s kill. IN-02 left as a defensive sentinel (acceptable).
 ---
 
 # Phase 03: Code Review Report
