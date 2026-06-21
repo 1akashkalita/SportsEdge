@@ -65,7 +65,9 @@ The most consequential architectural decision is the RES-03 timeout primitive. R
 
 RES-01 subprocess re-run is minimal: wrap three `subprocess.run()` call sites in a `_run_with_retry()` helper. The existing `run_build_hit_rate_db()` / `run_generate_projections()` already handle non-zero exit gracefully (they return a result dict and log); the only new behavior is: on non-zero exit or TimeoutExpired, sleep a short backoff and try once more. The distinction between "hard failure" (retry) and "empty-but-clean" (don't retry) is already implicit in the exit-code contract these stages use.
 
-RES-02 pipe reclassification is a small surgical change to `main()`'s try/except: add a `_task_result: dict | None = None` sentinel set to the result dict immediately after `run_task()` returns, and check it in the except branch. The Hermes cron kill window is confirmed as `_DEFAULT_SCRIPT_TIMEOUT = 120` seconds (scheduler.py:919 in the Hermes agent). This means the runner's own internal timeout budget must be below 120 seconds for fast tasks, and the `daily_picks` tasks (which can legitimately take 300+ seconds) must emit output within the 120-second window — which they do because they print `JSON_RESULT=` at the end of `main()`, not during the task body.
+RES-02 pipe reclassification is a small surgical change to `main()`'s try/except: add a `_task_result: dict | None = None` sentinel set to the result dict immediately after `run_task()` returns, and check it in the except branch.
+
+**Hermes cron kill window — CONFIRMED HARD 120 s (orchestrator-verified 2026-06-20, supersedes the earlier "likely overridden" guess).** All 12 sports jobs in `~/.hermes/cron/jobs.json` are `no_agent: True` with **no per-job timeout override**. `no_agent` jobs execute via `_run_job_script()` (`scheduler.py:1399`) which runs `subprocess.run(argv, timeout=_get_script_timeout())` (`scheduler.py:1048-1056`). `_get_script_timeout()` resolves to `_DEFAULT_SCRIPT_TIMEOUT = 120` because **none** of its override sources are set: `HERMES_CRON_SCRIPT_TIMEOUT` env var is unset, the `cron:` block in `~/.hermes/config.yaml` has **no** `script_timeout_seconds` key, and the `_SCRIPT_TIMEOUT` module global is unpatched. The wrapper (`~/.hermes/scripts/mlb_daily_picks_cron.py`) runs `sports_system_runner.py` **synchronously** and propagates its exit code — so the 120 s applies to the whole task. This is a **hard wall-clock `subprocess.run` timeout**, NOT the agent-path *inactivity* timeout — emitting output does **not** reset it. The 1,128 s / 7,697 s durations in `01-TIMING-EVIDENCE.md` were the 2026-06-15 network-storm backlog (lock contention + Telegram retries); under the 120 s window those runs were killed by Hermes at 120 s while the orphaned runner kept churning and logged its own `completed in …` line. **Consequence: every RES-03 budget MUST sit below 120 s with enough headroom (~30 s) for the clean-shutdown sequence (subprocess kill + the `⏱ TASK TIMED OUT` Telegram, which can itself take up to ~30 s if the network is down + log/JSON flush) to finish before Hermes's hard kill.** An 1800 s budget (the earlier draft) would never fire.
 
 **Primary recommendation:** Use `signal.SIGALRM` for RES-03 with an active subprocess kill in the timeout handler. The `safe_save_workbook()` atomic-save invariant (`workbook_io.py:154-165`) confirms interrupt-anywhere is safe for workbook writes.
 
@@ -344,135 +346,147 @@ def _subprocess_run_with_retry(
 
 ### Worst-case latency budget
 
-With 1 re-run and 5s backoff:
-- `fetch_dfs_props`: 300s (stage timeout) + 5s + 300s = 605s worst case
-- `build_hit_rate_db`: 600s + 5s + 600s = 1,205s worst case
-- `generate_projections`: 600s + 5s + 600s = 1,205s worst case
-- `daily_picks` stacked: 605 + 1,205 + 1,205 = 3,015s theoretical maximum
+The per-stage subprocess timeouts (300 / 600 / 600 s) and the "with 1 re-run" stacked figure
+(3,015 s) are **theoretical and unreachable under cron** — Hermes hard-kills the whole task at
+120 s (see Q3), so no individual stage timeout can ever fully elapse in a cron run. They matter
+only for manual `run_all_tasks.py` invocations.
 
-This is below the `daily_picks` RES-03 budget (see Q3 below). Under normal conditions (fetch <5s, hit-rate ~20s, projections ~2s) the retry path adds 5s per failure, which is negligible.
+What matters for cron: under normal conditions (fetch <5 s, hit-rate ~20 s, projections ~2 s) a
+single re-run adds ~5 s backoff + a repeat of one fast stage — comfortably inside the 120 s window
+and inside the RES-03 task budget (~90 s for daily_picks). The retry is **opportunistic within the
+budget**, not sized against the stage ceilings. The SIGALRM task budget is the real backstop: if a
+stage genuinely hangs, the RES-03 alarm fires at the task budget and the handler kills the in-flight
+subprocess (orphan mitigation, Q1) — the retry loop never gets a second attempt because
+`TaskTimeoutError` unwinds past it (see ordering note in Code Examples).
 
-[VERIFIED: stage timeouts from code at lines 1286, 1365, 1399]
+[VERIFIED: stage timeouts from code at lines 1286, 1365, 1399; Hermes 120 s kill confirmed in Q3]
 
 ---
 
 ## Q3: RES-03 Per-Task Budget Values
 
-### Hermes cron kill window — CONFIRMED
+### Hermes cron kill window — CONFIRMED HARD 120 s [VERIFIED 2026-06-20, orchestrator]
 
-From `~/.hermes/hermes-agent/cron/scheduler.py:919`:
-```python
-_DEFAULT_SCRIPT_TIMEOUT = 120  # seconds
-```
+> This subsection was rewritten after the initial draft. The earlier draft *assumed* the
+> window was >1800 s ("likely overridden"). Direct inspection of the live Hermes install
+> disproves that: the window is a **hard 120 s** and there is **no override**.
 
-This is the Hermes `_run_job_script()` timeout. It's applied via `subprocess.run(argv, timeout=script_timeout)` at `scheduler.py:1048-1056`. **The Hermes cron wrapper kills the runner after 120 seconds.**
+**The verified chain (every link inspected on this machine):**
 
-However: this applies only to `no_agent=True` jobs using the `_run_job_script()` path. Looking at the actual cron job structure, the sports jobs use `no_agent=True` with `script=` set to the runner script. The `workdir` field sets the CWD, and the `_run_job_script()` runs the script via `subprocess.run(argv, timeout=script_timeout, cwd=str(path.parent))`.
+1. **All 12 sports jobs are `no_agent: True`** with **no per-job timeout** (`~/.hermes/cron/jobs.json` — confirmed for `mlb_daily_picks`, `nba_daily_picks`, all prop/injury/clv monitors, `check_results`; `timeout` keys empty on every one).
+2. **`no_agent` jobs run via `_run_job_script()`** — `scheduler.py:1362` ("no_agent short-circuit — the script IS the job") → `scheduler.py:1399` calls `_run_job_script(script_path)`.
+3. **`_run_job_script()` hard-kills at `_get_script_timeout()`** via `subprocess.run(argv, capture_output=True, timeout=script_timeout)` (`scheduler.py:1048-1056`); on expiry it returns `"Script timed out after {script_timeout}s"` (`scheduler.py:1078-1079`).
+4. **`_get_script_timeout()` returns 120** (`scheduler.py:924-954`): the module global `_SCRIPT_TIMEOUT` is unpatched (== default), `HERMES_CRON_SCRIPT_TIMEOUT` is **unset**, and `~/.hermes/config.yaml`'s `cron:` block has **no** `script_timeout_seconds` key → falls through to `_DEFAULT_SCRIPT_TIMEOUT = 120` (`scheduler.py:919`).
+5. **The wrapper runs the runner synchronously.** `~/.hermes/scripts/mlb_daily_picks_cron.py` is literally `raise SystemExit(subprocess.run([python3, sports_system_runner.py, --task, mlb_daily_picks]).returncode)` — no backgrounding, exit code propagated. So the 120 s governs the entire task.
 
-This is a critical finding: **the Hermes cron wrapper timeout is 120 seconds by default**, but that timeout is configurable via:
-- `HERMES_CRON_SCRIPT_TIMEOUT` environment variable
-- `cron.script_timeout_seconds` in `~/.hermes/config.yaml`
+**This is a HARD wall-clock timeout, not an inactivity timeout.** `subprocess.run(timeout=120)` kills at 120 s of wall-clock regardless of how much stdout the task produces. (The *inactivity*-based 600 s timeout at `scheduler.py:1805` — `HERMES_CRON_TIMEOUT`, output resets it — applies only to the LLM/agent path, which `no_agent` jobs skip entirely.) Any earlier reasoning that "daily_picks survives because it emits `JSON_RESULT=` within the window" is wrong for `no_agent` jobs.
 
-The `daily_picks` tasks routinely take 38-1131 seconds (evidence from timing data). This means either:
-1. The sports jobs have a custom timeout configured, OR
-2. The 120s default was overridden for sports jobs, OR
-3. The sports runner is not actually going through `_run_job_script()` (it has its own `no_agent` execution path that doesn't apply this timeout for long-running scripts)
+**Why the timing evidence showed 1,128 s / 7,697 s "completions":** those are the 2026-06-15 network-outage backlog (lock contention + Telegram retry storm, `01-TIMING-EVIDENCE.md:101-124`). Under a 120 s hard kill, Hermes killed the *wrapper* at 120 s; the *grandchild* runner was orphaned, kept running, and wrote its own `completed in 1128 s` line to the run log. Hermes had already declared the job timed out. This reconciles the contradiction and is exactly the "cron-job timeouts / spurious TASK FAILED" symptom this milestone exists to fix.
 
-Looking more carefully at `_run_job_impl()` at `scheduler.py:1379-1406`: it calls `_run_job_script(script_path)` which applies the `script_timeout`. If the default is 120s, `mlb_daily_picks` at 44s median would pass, but the 1128s observed run from timing evidence would be killed. Yet the timing evidence shows these completing.
+**`01-TIMING-EVIDENCE.md:194` had this `[ASSUMED]` as "approximately 60–120 s" — it is now CONFIRMED at exactly 120 s.**
 
-**This suggests either a higher configured timeout or a different execution path for sports jobs.** The `HERMES_CRON_SCRIPT_TIMEOUT` env var or `cron.script_timeout_seconds` config is likely set. The `gateway_timeout: 1800` in the config's `gateway` section may relate to the Hermes gateway (HTTP endpoint) timeout, not the script execution timeout — these are separate.
+### Sizing constraint (the hard rule for RES-03 budgets)
 
-[ASSUMED: The Hermes kill window for sports jobs is >1800 seconds or uncapped, based on observed completion of 7,697s runs. The `_DEFAULT_SCRIPT_TIMEOUT = 120s` is likely overridden for sports jobs. The operator should confirm the actual configured value.]
+Every per-task budget **must be < 120 s**, and must leave headroom for the clean-shutdown
+sequence so the task self-terminates *before* Hermes's hard kill:
 
-**Conservative sizing approach:** Given uncertainty about the kill window, size RES-03 budgets so they fire well before any plausible cron kill, but well above the real worst-case under normal network conditions (not network-outage stalls, which Phase 2 already addressed via the Telegram circuit-breaker).
+- SIGALRM handler kills the in-flight subprocess + `wait(timeout=5)` → up to ~5 s
+- `⏱ TASK TIMED OUT` Telegram alert → up to ~30 s worst case if the network is down at
+  timeout (10 s/call × the Phase-2 3-strike breaker), typically <1 s
+- error log + `JSON_RESULT=` flush → negligible
+
+**Reserve ~30 s of headroom.** Practical ceiling for the slowest task ≈ **90 s**; faster
+task-classes tighter (D-05's "monitors/verify tight"). Anchor to **post-Phase-2 clean medians**,
+NOT the raw p75s in `01-TIMING-EVIDENCE.md` — those p75s are storm-contaminated (Telegram
+retries) and the obsidian-decouple fix already removed ~58 s/run from prop_monitor
+(`01-TIMING-EVIDENCE.md:181`, `876`).
+
+**Structural caveat for the operator (out of Phase-3 scope, but flag it in the plan):** any task
+whose *clean* runtime can exceed ~120 s is structurally incompatible with the current Hermes
+window regardless of RES-03 — RES-03 only makes that failure *clean and labeled* instead of an
+opaque Hermes kill. `mlb_daily_picks` (clean median 44 s, but stacks fetch+hitrate+projections
+subprocess stages) and `mlb_prop_monitor` are closest to the edge. If legitimately-slow runs
+start tripping RES-03, the real remedy is raising the Hermes cron timeout
+(`cron.script_timeout_seconds` in `~/.hermes/config.yaml`, or `HERMES_CRON_SCRIPT_TIMEOUT`) —
+a Hermes-config change *outside* the sports_picks repo and outside this phase's minimal-invasive
+boundary.
 
 ### Per-task budget recommendations
 
-Derived from 01-TIMING-EVIDENCE.md timing profile (791+ completions, 2026-06-08 to 2026-06-15):
+**Hard constraint (see kill-window section above): every budget < 120 s, ~30 s shutdown
+headroom → practical ceiling ~90 s.** All raw p75s in `01-TIMING-EVIDENCE.md` are
+storm-contaminated; anchor to **post-Phase-2 clean medians** (strip Telegram-retry and the
+already-removed ~58 s/run obsidian overhead). The old 300/600/1800 s budgets below were
+relics of the wrong-kill-window draft and are **rejected** — they would never fire before
+Hermes's 120 s kill.
 
-**Task-class A — `daily_picks` (nba/mlb):**
-- Normal median: nba 21.3s, mlb 44.4s
-- Normal p75: nba 62.8s, mlb 164.3s
-- Legitimate slow path: fetch (up to 300s) + hit-rate (up to 600s) + projections (up to 600s) = 1,500s theoretical max
-- With 1 re-run per stage: worst case 3,015s (see Q2)
-- Extreme observed (network storm, pre-Phase-2 fix): 7,331s and 7,697s — but these are network-stall events Phase 2 already bounded via the circuit-breaker
+The 1,500 s subprocess ceiling (fetch 300 + hitrate 600 + projections 600) and the 3,015 s
+"with retry" figure from Q2 are **theoretical and moot under cron**: Hermes kills at 120 s, so
+those stage timeouts can never actually elapse in a cron run. They matter only for manual runs.
+RES-01's 1 re-run + ~5 s backoff is opportunistic *within* the 120 s window (normal stages run
+~20 s each, so a single retry still fits); it is not sized against the stage ceilings.
 
-**Recommended budget:** 1800s (30 minutes). Rationale: covers the 1,500s theoretical subprocess ceiling plus 1 re-run (3,015s is the absolute max if ALL three stages time out AND each is retried after TimeoutExpired). 1800s sits comfortably above p75 and allows for a legitimate slow run without false fires, while being significantly below a network-outage stall that could last hours.
+**Task-class A — `daily_picks` (nba/mlb):** clean median nba 21 s, mlb 44 s. Slowest task-class
+(stacks 3 subprocess stages). **Budget: 90 s** — the practical ceiling; ~2x the mlb clean median,
+still leaves ~30 s for shutdown before 120 s. (Flag for operator: if clean mlb_daily_picks ever
+legitimately approaches 90 s, the Hermes window itself is the bottleneck — see structural caveat.)
 
-**Task-class B — `prop_monitor` (nba/mlb):**
-- Normal median: nba 31.0s, mlb 98.7s
-- Normal p75: nba 103.0s, mlb 197.3s
-- No long subprocesses (no daily_picks pipeline)
-- Extreme observed (network storm): nba 10,062s, mlb 12,585s — entirely Telegram retry storm, now bounded
+**Task-class B — `prop_monitor` (nba/mlb):** clean median ≈ nba 31 s; mlb raw median 98.7 s but
+that *includes* residual network latency + the ~58 s obsidian overhead the Phase-2 decouple
+removed, so clean mlb ≈ 40 s. **Budget: 80 s.**
 
-**Recommended budget:** 600s (10 minutes). Rationale: covers the p75 (197.3s) with 3x headroom for legitimate slow days. The Telegram circuit-breaker now caps delay from that source. If the prop monitor hits 600s under normal network conditions, something is genuinely hung.
+**Task-class C — `clv_tracker` (nba/mlb):** raw medians (nba 240 s, mlb 206 s) and p75s (3,000 s+)
+are ENTIRELY pre-Phase-2 Telegram + lock-contention stall; clean post-fix runtime should be tens
+of seconds. **Budget: 80 s** (with a note to re-confirm against post-Phase-2 timing once available).
 
-**Task-class C — `clv_tracker` (nba/mlb):**
-- Normal median: nba 240.3s, mlb 205.9s
-- Normal p75: nba 3,069.5s, mlb 3,792.2s — ENTIRELY network stall (Telegram + lock contention)
-- With Phase 2 fixes applied (Telegram circuit-breaker, lock stale threshold): p75 should drop dramatically
+**Task-class D — `injury_monitor` (nba/mlb):** clean median nba 14 s, mlb 22 s, p75 nba 50 s.
+**Budget: 75 s.**
 
-**Recommended budget:** 600s (10 minutes). Same reasoning as prop_monitor. The high observed p75 reflects pre-Phase-2 conditions. Post-fix p75 should be well under 300s.
+**Task-class E — `game_completion_monitor`:** clean median 2 s, p75 5 s; rare 651 s lock-contention
+spike. **Budget: 60 s** (30x median; a 60 s run is unambiguously hung).
 
-**Task-class D — `injury_monitor` (nba/mlb):**
-- Normal median: nba 14.2s, mlb 21.7s (only 3 mlb samples)
-- Normal p75: nba 50.5s
+**Task-class F — `check_results`:** clean median 49 s; p75 569 s and extreme 2,025 s are storm.
+**Budget: 90 s.**
 
-**Recommended budget:** 300s (5 minutes). 6x headroom above p75.
+**Task-class G — `verify`:** clean median 27 s, p75 90 s (storm-inflated). **Budget: 60 s.**
 
-**Task-class E — `game_completion_monitor`:**
-- Normal median: 2.2s
-- Normal p75: 4.9s
-- Extreme: 651.4s (rare, lock contention)
-
-**Recommended budget:** 300s (5 minutes). 60x above median; covers rare lock contention without false fires.
-
-**Task-class F — `check_results`:**
-- Normal median: 49.4s
-- Normal p75: 568.5s
-- Extreme: 2,025.5s (network storm)
-
-**Recommended budget:** 600s (10 minutes).
-
-**Task-class G — `verify`:**
-- Normal median: 26.6s
-- Normal p75: 89.7s
-- Extreme: 1,780.3s (Telegram retry storm)
-
-**Recommended budget:** 300s (5 minutes). 3x above p75.
+> These are starting values within the confirmed 120 s constraint; the planner finalizes exact
+> numbers (D-05 / "exact per-task budget values" = planner's call). The non-negotiable rule is
+> **every value < ~90 s** so the clean-shutdown sequence completes before Hermes's hard 120 s kill.
 
 ### Summary table
 
-| Task | Class | Budget | Rationale |
-|------|-------|--------|-----------|
-| `nba_daily_picks` | A | 1800s | Subprocess ceiling + 1 re-run |
-| `mlb_daily_picks` | A | 1800s | Same |
-| `nba_prop_monitor` | B | 600s | 3x p75 post-fix |
-| `mlb_prop_monitor` | B | 600s | Same |
-| `nba_clv_tracker` | C | 600s | 3x expected post-fix p75 |
-| `mlb_clv_tracker` | C | 600s | Same |
-| `nba_injury_monitor` | D | 300s | 6x p75 |
-| `mlb_injury_monitor` | D | 300s | Same |
-| `game_completion_monitor` | E | 300s | Covers rare lock contention |
-| `check_results` | F | 600s | 3x p75 post-fix |
-| `verify` | G | 300s | 3x p75 |
+| Task | Class | Budget | Rationale (all < 120 s Hermes hard kill, ~30 s shutdown headroom) |
+|------|-------|--------|----------|
+| `nba_daily_picks` | A | 90s | Slowest class; ~2–4x clean median |
+| `mlb_daily_picks` | A | 90s | Same; closest to the 120 s edge — flag for operator |
+| `nba_prop_monitor` | B | 80s | ~2x clean median |
+| `mlb_prop_monitor` | B | 80s | Clean median ≈40 s post-obsidian-decouple |
+| `nba_clv_tracker` | C | 80s | Re-confirm vs post-Phase-2 timing |
+| `mlb_clv_tracker` | C | 80s | Same |
+| `nba_injury_monitor` | D | 75s | ~1.5x p75 |
+| `mlb_injury_monitor` | D | 75s | Same |
+| `game_completion_monitor` | E | 60s | 30x median; covers rare lock contention |
+| `check_results` | F | 90s | ~2x clean median |
+| `verify` | G | 60s | ~2x clean median |
 
 **TASK_TIMEOUTS dict pattern in runner:**
 
 ```python
-TASK_TIMEOUTS: dict[str, int] = {
-    "nba_daily_picks": 1800,
-    "mlb_daily_picks": 1800,
-    "nba_prop_monitor": 600,
-    "mlb_prop_monitor": 600,
-    "nba_clv_tracker": 600,
-    "mlb_clv_tracker": 600,
-    "nba_injury_monitor": 300,
-    "mlb_injury_monitor": 300,
-    "game_completion_monitor": 300,
-    "check_results": 600,
-    "verify": 300,
+TASK_TIMEOUTS: dict[str, int] = {  # all < 120 s — the confirmed Hermes no_agent hard kill
+    "nba_daily_picks": 90,
+    "mlb_daily_picks": 90,
+    "nba_prop_monitor": 80,
+    "mlb_prop_monitor": 80,
+    "nba_clv_tracker": 80,
+    "mlb_clv_tracker": 80,
+    "nba_injury_monitor": 75,
+    "mlb_injury_monitor": 75,
+    "game_completion_monitor": 60,
+    "check_results": 90,
+    "verify": 60,
 }
+# Default fallback for any unlisted task MUST also be < ~90 s (e.g. 60), NOT 600.
 ```
 
 ---
@@ -761,14 +775,14 @@ class TaskTimeoutError(Exception):
 
 _current_subprocess: subprocess.Popen | None = None
 
-TASK_TIMEOUTS: dict[str, int] = {
-    "nba_daily_picks": 1800, "mlb_daily_picks": 1800,
-    "nba_prop_monitor": 600, "mlb_prop_monitor": 600,
-    "nba_clv_tracker": 600, "mlb_clv_tracker": 600,
-    "nba_injury_monitor": 300, "mlb_injury_monitor": 300,
-    "game_completion_monitor": 300,
-    "check_results": 600,
-    "verify": 300,
+TASK_TIMEOUTS: dict[str, int] = {  # all < 120 s — confirmed Hermes no_agent hard kill
+    "nba_daily_picks": 90, "mlb_daily_picks": 90,
+    "nba_prop_monitor": 80, "mlb_prop_monitor": 80,
+    "nba_clv_tracker": 80, "mlb_clv_tracker": 80,
+    "nba_injury_monitor": 75, "mlb_injury_monitor": 75,
+    "game_completion_monitor": 60,
+    "check_results": 90,
+    "verify": 60,
 }
 
 def _sigalrm_handler(signum: int, frame: Any) -> None:
@@ -783,7 +797,7 @@ def _sigalrm_handler(signum: int, frame: Any) -> None:
     raise TaskTimeoutError(f"Task exceeded wall-clock budget (SIGALRM)")
 
 # In main() try block, before locks:
-budget = TASK_TIMEOUTS.get(args.task, 600)
+budget = TASK_TIMEOUTS.get(args.task, 60)  # default < 120 s Hermes hard kill, NOT 600
 old_handler = signal.signal(signal.SIGALRM, _sigalrm_handler)
 signal.alarm(budget)
 try:
@@ -884,7 +898,7 @@ Note: the actual implementation may be simpler — using `subprocess.run()` dire
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
 | A1 | 5-second retry backoff is appropriate for subprocess re-run | Q2 (Retry helper) | Too short: doesn't help transient failures; too long: adds latency. Operator can tune. |
-| A2 | The Hermes kill window for sports jobs is >1800s (not the default 120s) | Q3 (Cron kill window) | If 120s is the actual limit, daily_picks budget of 1800s is unreachable; runner would be killed by Hermes before the internal timeout fires. Operator must confirm. |
+| A2 | ~~The Hermes kill window for sports jobs is >1800s~~ **RESOLVED → CONFIRMED 120 s hard.** | Q3 (Cron kill window) | Resolved by orchestrator inspection 2026-06-20: all sports jobs `no_agent:True`, no override, `_run_job_script` → `subprocess.run(timeout=120)`. All RES-03 budgets revised to < 120 s. No remaining risk on this item. |
 | A3 | Returning exit code 0 on BrokenPipeError-after-completion is correct | Q4 (Return code) | If Hermes expects exit 1 on any pipe error and uses it for delivery decisions, returning 0 could suppress valid error signals. Low risk: the task DID complete. |
 | A4 | `_task_result` flag approach correctly handles all BrokenPipeError scenarios | Q4 (Flag placement) | Edge case: if the task completes but `dispatch_alerts` raises a non-BrokenPipeError before it raises a BrokenPipeError, the flag is set but the wrong exception is in the except branch. Low risk given the dispatch_alerts structure. |
 | A5 | The SIGALRM + subprocess kill pattern correctly prevents orphans | Q1 (Orphan mitigation) | If kill() returns before the subprocess terminates and the handler proceeds, the orphan can still exist briefly. The `.wait(timeout=5)` handles this. |
@@ -893,10 +907,15 @@ Note: the actual implementation may be simpler — using `subprocess.run()` dire
 
 ## Open Questions
 
-1. **Hermes kill window for sports jobs**
-   - What we know: `_DEFAULT_SCRIPT_TIMEOUT = 120s` in Hermes scheduler; sports jobs observed completing at 1128s (mlb_daily_picks) and 7697s in timing evidence
-   - What's unclear: what `HERMES_CRON_SCRIPT_TIMEOUT` env var or `cron.script_timeout_seconds` config value is set for sports cron jobs
-   - Recommendation: operator checks `echo $HERMES_CRON_SCRIPT_TIMEOUT` and `~/.hermes/config.yaml` cron section before finalizing the `daily_picks` 1800s budget. If the kill window is 120s, the `daily_picks` budget must be well below 120s, which conflicts with the 1500s subprocess ceiling.
+1. **Hermes kill window for sports jobs — RESOLVED (no longer open).**
+   - CONFIRMED 2026-06-20: hard **120 s** `subprocess.run` timeout, no override (env unset, no
+     `cron.script_timeout_seconds`, jobs all `no_agent:True` with no per-job timeout). See Q3 for
+     the full verified chain. All RES-03 budgets are now < 120 s.
+   - The 1128 s / 7697 s "completions" were orphaned-runner log lines after Hermes killed the
+     wrapper at 120 s during the 2026-06-15 network storm — not clean completions.
+   - Residual operator action (optional, OUT of Phase-3 scope): if legitimately-slow daily_picks
+     runs trip RES-03 post-fix, raise `cron.script_timeout_seconds` in `~/.hermes/config.yaml`.
+     That is a Hermes-config change, not a sports_picks code change.
 
 2. **SIGALRM interaction with `fcntl.LOCK_EX` during task_workbook_locks acquisition**
    - What we know: SIGALRM interrupts `fcntl.flock()` cleanly (tested), Python context managers run `__exit__` on exception (spec), so lock files are released
@@ -1014,10 +1033,10 @@ Note: the actual implementation may be simpler — using `subprocess.run()` dire
 **Confidence breakdown:**
 - Standard stack: HIGH — no new packages; all stdlib on verified Python 3.14
 - Architecture (SIGALRM primitive): HIGH — tested directly on target interpreter
-- Per-task budget values: MEDIUM — derived from actual timing evidence; uncertainty on Hermes kill window
+- Per-task budget values: MEDIUM-HIGH — Hermes kill window now CONFIRMED 120 s; budgets sized < 120 s from clean medians. Residual uncertainty is only in the exact clean-median values (storm-contaminated source data), not the hard ceiling.
 - Pitfalls (orphan risk): HIGH — directly reproduced
 - Test strategy: HIGH — follows Phase-2 patterns; specific test stubs are ASSUMED
-- Hermes kill window: LOW — observed completions >120s but can't find explicit config override for sports jobs
+- Hermes kill window: HIGH (was LOW) — orchestrator-verified 2026-06-20: hard 120 s, no override. Full chain inspected: jobs.json (all no_agent, no timeout) → _run_job_script → subprocess.run(timeout=_get_script_timeout()=120) → synchronous wrapper.
 
 **Research date:** 2026-06-20
 **Valid until:** 2026-07-20 (30 days — stable stdlib, no fast-moving dependencies)
