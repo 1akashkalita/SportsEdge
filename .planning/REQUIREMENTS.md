@@ -38,8 +38,8 @@ Requirements for this stability milestone. Each maps to a roadmap phase.
 
 ### Continuous Integration
 
-- [ ] **CI-01**: The `unittest` suite runs automatically on each change and reports pass/fail
-- [ ] **CI-02**: CI invokes tests from the correct working directory and interpreter (guards the run-from-`scripts/`-with-`python3` footgun)
+- [x] **CI-01**: The `unittest` suite runs automatically on each change and reports pass/fail
+- [x] **CI-02**: CI invokes tests from the correct working directory and interpreter (guards the run-from-`scripts/`-with-`python3` footgun)
 
 ## v2 Requirements
 
@@ -81,8 +81,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | OBS-01 | Phase 4 | Complete |
 | OBS-02 | Phase 4 | Complete |
 | OBS-03 | Phase 4 | Complete |
-| CI-01 | Phase 5 | Pending |
-| CI-02 | Phase 5 | Pending |
+| CI-01 | Phase 5 | Complete |
+| CI-02 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 16 total
