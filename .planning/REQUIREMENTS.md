@@ -32,7 +32,7 @@ Requirements for this stability milestone. Each maps to a roadmap phase.
 
 ### Observability
 
-- [ ] **OBS-01**: Each task run emits a structured log record (task, status, duration, error) the operator can review after the fact
+- [x] **OBS-01**: Each task run emits a structured log record (task, status, duration, error) the operator can review after the fact
 - [ ] **OBS-02**: A health / heartbeat check surfaces when a scheduled task has not run or last ended in failure
 - [ ] **OBS-03**: Repeated or patterned failures produce a distinct alert rather than only per-occurrence noise
 
@@ -78,7 +78,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | RES-02 | Phase 3 | Complete |
 | RES-03 | Phase 3 | Complete |
 | RES-04 | Phase 3 | Complete |
-| OBS-01 | Phase 4 | Pending |
+| OBS-01 | Phase 4 | Complete |
 | OBS-02 | Phase 4 | Pending |
 | OBS-03 | Phase 4 | Pending |
 | CI-01 | Phase 5 | Pending |
