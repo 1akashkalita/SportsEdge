@@ -13,7 +13,15 @@ findings:
   warning: 4
   info: 2
   total: 8
-status: issues_found
+status: resolved
+resolution_commit: 04f72c6
+resolution_note: >
+  CR-01, CR-02, WR-01, WR-02, WR-04, IN-01 fixed in 04f72c6 (helper rewritten to
+  translate capture_output -> PIPE and drain via communicate(); real-child tests
+  added; full suite green at baseline 2 failed / 224 passed). WR-03 ESCALATED: the
+  90s/80s/75s/60s RES-03 budgets are far below observed task runtimes (mlb_daily_picks
+  509s, check_results 394s, mlb_prop_monitor up to 340s) — pending an operator budget
+  decision before RES-03 ships. IN-02 left as a defensive sentinel (acceptable).
 ---
 
 # Phase 03: Code Review Report
