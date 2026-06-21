@@ -29,13 +29,13 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 - ✓ Broken-pipe `[Errno 32]` failure fixed — all bare stdout prints routed through `safe_print`; a completed task survives a closed cron pipe with no spurious `TASK FAILED` (regression-tested) — Phase 2 (FIX-01)
 - ✓ All 11 runner tasks run clean end-to-end — proven by `scripts/run_all_tasks.py` live pass (11/11 on 2026-06-20) — Phase 2 (FIX-03)
 - ✓ Stability-threatening defects removed — duplicate `injury_monitor`/`clv_tracker` defs deleted (DEF-01); `generate_projections.py` BASE de-hardcoded to `Path.home()` (DEF-02) — Phase 2
+- ✓ Resilience safety net — subprocess stages re-run once with backoff (RES-01), post-completion `BrokenPipeError` reclassified at the task boundary so a closed cron pipe no longer fires `TASK FAILED` (RES-02), every task enforces a SIGALRM hard wall-clock budget that self-terminates cleanly before the cron kill (RES-03), and every Phase-2 fix is regression-tested (RES-04) — Phase 3
+- ✓ Cron timeout root cause resolved at the ceiling, not by clamping — the Hermes `cron.script_timeout_seconds` was 120s while tasks genuinely run up to ~509s (orphan-killing them mid-run); raised to 720s with RES-03 budgets at 660s self-terminating just below it — Phase 3
 
 ### Active
 
 <!-- This milestone. Hypotheses until shipped and validated. -->
 
-- [ ] Cron-job timeouts fully eliminated — the dominant contributors (Telegram retry loop, per-line Obsidian subprocess) were bounded in Phase 2 (FIX-02: 10s timeout + circuit-breaker, single task-end vault sync); the general hard self-timeout / `SIGPIPE` safety net lands in Phase 3
-- [ ] Safety net added: retries/backoff on network calls, sane + hard timeouts, broken-pipe/`SIGPIPE` handling, and a regression test for each fix
 - [ ] Observability added: structured run logs, a health/heartbeat check, and alerting on failure patterns
 - [ ] CI runs the test suite to catch breakage before cron does
 
@@ -78,6 +78,10 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 | Definition of done = all cron jobs + pipelines run correctly (no timeouts, no task-failed alerts) | The operator's stated bar for "stable" | — Pending |
 | Treat diagnosis as a first-class step (reproduce + root-cause before fixing) | The exact cause of the broken pipe is not yet pinned down | ✓ Phase 1 — `DIAGNOSIS.md`: broken pipe = bare `JSON_RESULT=` print in `main()` (`sports_system_runner.py:5634`/`:5640`); dominant timeout = `send_telegram()` retry loop (30s×2 per call site, 24,923s max observed), NOT stacked subprocess timeouts (ruled out) |
 | Bound the diagnosed failure modes minimally rather than install the general safety net in the same phase | Fix the proven, dominant contributors first; defer retries/hard-timeouts/SIGPIPE to Phase 3 so regression tests cover the actual fix paths | ✓ Phase 2 — `safe_print` stdout sweep (FIX-01), `send_telegram` 10s timeout + per-invocation circuit-breaker, Obsidian decoupled to one task-end `sports_run_log` sync (FIX-02), duplicate defs removed (DEF-01), `Path.home()` base (DEF-02); live 11/11 task pass (FIX-03) |
+| RES-01 retry scoped to the subprocess stages, not every HTTP call | The fetch/ESPN/projection stages are already isolated subprocesses with clean exit codes; Telegram (Phase-2 circuit breaker) and Odds-API.io (own retry loop) handle their own transient faults | ✓ Phase 3 — `_subprocess_run_with_retry` wraps the 3 stages with one backoff re-run (D-04) |
+| Catch `BrokenPipeError` at the task boundary instead of installing a `SIGPIPE` handler | A post-completion sentinel (`_task_result`) cleanly distinguishes "pipe closed after success" from a genuine mid-task failure without a process-wide signal handler (D-09) | ✓ Phase 3 — RES-02, both cases regression-tested |
+| Raise the Hermes 120s cron kill to 720s rather than clamp RES-03 budgets under 120s | Investigation (code-review WR-03) proved tasks genuinely run up to ~509s and the 120s default was orphan-killing them; clamping would have made every slow task time out. Operator chose to lift the external ceiling and keep RES-03 (660s) as a clean-shutdown net just below it | ✓ Phase 3 — `cron.script_timeout_seconds: 720` in `~/.hermes/config.yaml` (outside repo; scheduler restart required), RES-03 budgets 660s |
+| Repair RES-01 helper defects found in code review before shipping | The first implementation passed `capture_output=True` to `Popen` (TypeError on every call) and drained via `wait()`+`read()` (deadlock on large output); the regression test's fake `Popen` masked both | ✓ Phase 3 — fixed in `04f72c6`; real-child regression tests added; full suite green at baseline |
 
 ## Evolution
 
@@ -97,4 +101,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-20 after Phase 2 (Reliability Fixes + Defect Removal) completion*
+*Last updated: 2026-06-21 after Phase 3 (Resilience) completion*
