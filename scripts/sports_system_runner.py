@@ -18,6 +18,7 @@ import csv
 import json
 import os
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
@@ -94,6 +95,89 @@ _telegram_breaker: dict[str, Any] = {"consecutive_failures": 0, "tripped": False
 # Per-invocation log accumulator for the single end-of-task Obsidian summary sync.
 # Populated by log(); reset at the top of main()'s try block.
 _task_log_lines: list[str] = []
+
+# RES-03: Tracks the live Popen object during subprocess execution so the SIGALRM
+# handler can kill the in-flight child before raising TaskTimeoutError.
+_current_subprocess: subprocess.Popen | None = None
+
+# RES-03: Per-task wall-clock budgets (seconds). All values < 120 s (confirmed
+# Hermes no_agent hard-kill window); ~30 s headroom reserved for clean shutdown.
+TASK_TIMEOUTS: dict[str, int] = {
+    "nba_daily_picks": 90,
+    "mlb_daily_picks": 90,
+    "nba_prop_monitor": 80,
+    "mlb_prop_monitor": 80,
+    "nba_clv_tracker": 80,
+    "mlb_clv_tracker": 80,
+    "nba_injury_monitor": 75,
+    "mlb_injury_monitor": 75,
+    "game_completion_monitor": 60,
+    "check_results": 90,
+    "verify": 60,
+}
+
+
+class TaskTimeoutError(Exception):
+    """Raised by _sigalrm_handler when a task exceeds its wall-clock budget."""
+
+
+def _sigalrm_handler(signum: int, frame: Any) -> None:
+    """SIGALRM handler: kill any in-flight subprocess then raise TaskTimeoutError."""
+    global _current_subprocess
+    if _current_subprocess is not None:
+        try:
+            _current_subprocess.kill()
+            _current_subprocess.wait(timeout=5)
+        except Exception:
+            pass
+        _current_subprocess = None
+    raise TaskTimeoutError("Task exceeded wall-clock budget (SIGALRM)")
+
+
+def _subprocess_run_with_retry(
+    cmd: list[str],
+    *,
+    timeout: int,
+    backoff: int = 5,
+    context: str,
+    **kwargs: Any,
+) -> subprocess.CompletedProcess:
+    """Run a subprocess, retrying exactly once on hard failure (non-zero exit or TimeoutExpired).
+
+    Exit 0 — including an empty board — is NOT retried (D-02). Uses subprocess.Popen
+    (not subprocess.run) so the live child is tracked in _current_subprocess and can be
+    killed by _sigalrm_handler on timeout (RES-03). TaskTimeoutError from SIGALRM is NOT
+    caught here — it unwinds past the retry loop so the alarm always wins over the retry.
+    """
+    global _current_subprocess
+    for attempt in range(2):
+        try:
+            proc = subprocess.Popen(cmd, **kwargs)
+            _current_subprocess = proc
+            try:
+                proc.wait(timeout=timeout)
+            finally:
+                _current_subprocess = None
+            stdout = proc.stdout.read() if proc.stdout else b""
+            stderr = proc.stderr.read() if proc.stderr else b""
+            if kwargs.get("text"):
+                stdout = stdout if isinstance(stdout, str) else stdout.decode("utf-8", errors="replace")
+                stderr = stderr if isinstance(stderr, str) else stderr.decode("utf-8", errors="replace")
+            cp = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired:
+            _current_subprocess = None
+            if attempt == 0:
+                log(f"WARNING: {context} timed out on attempt 1/2; retrying in {backoff}s")
+                time.sleep(backoff)
+                continue
+            raise
+        if cp.returncode != 0:
+            if attempt == 0:
+                log(f"WARNING: {context} exited {cp.returncode} on attempt 1/2; retrying in {backoff}s")
+                time.sleep(backoff)
+                continue
+        return cp
+    raise RuntimeError(f"{context}: unreachable retry path")
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -1283,7 +1367,7 @@ def run_fetch_dfs_props(sport: str) -> None:
         run_fetch_prizepicks(sport)
         return
     cmd = [sys.executable, str(script), "--league", sport]
-    cp = subprocess.run(cmd, text=True, capture_output=True, timeout=300)
+    cp = _subprocess_run_with_retry(cmd, timeout=300, context=f"fetch_dfs_props {sport}", text=True, capture_output=True)
     if cp.stdout:
         safe_print(cp.stdout.rstrip())
     if cp.stderr:
@@ -1362,7 +1446,7 @@ def run_build_hit_rate_db(sport: str, date: str) -> dict[str, Any]:
         log(f"{sport.upper()} hit-rate build skipped: missing {HIT_RATE_SCRIPT}")
         return {"status": "missing_script"}
     cmd = ["/usr/local/bin/python3", str(HIT_RATE_SCRIPT), "--sport", sport, "--date", date, "--workers", "8"]
-    cp = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    cp = _subprocess_run_with_retry(cmd, timeout=600, context=f"hit-rate build {sport}", capture_output=True, text=True)
     if cp.returncode != 0:
         log(f"{sport.upper()} hit-rate build failed: exit={cp.returncode} stderr={cp.stderr[-500:]}")
         return {"status": "failed", "exit_code": cp.returncode, "stderr": cp.stderr[-1000:]}
@@ -1396,7 +1480,7 @@ def run_generate_projections(sport: str, date: str) -> dict[str, Any]:
         log(f"{sport.upper()} projection generation skipped: missing {PROJECTION_SCRIPT}")
         return {"status": "missing_script"}
     cmd = ["/usr/local/bin/python3", str(PROJECTION_SCRIPT), "--sport", sport, "--date", date]
-    cp = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    cp = _subprocess_run_with_retry(cmd, timeout=600, context=f"projection generation {sport}", capture_output=True, text=True)
     if cp.returncode != 0:
         log(f"{sport.upper()} projection generation failed: exit={cp.returncode} stderr={cp.stderr[-500:]}")
         return {"status": "failed", "exit_code": cp.returncode, "stderr": cp.stderr[-1000:]}
