@@ -56,6 +56,7 @@ PNL_DIR = DATA / "pnl"
 LOG_DIR = PNL_DIR / "logs"
 SCRIPTS = ROOT / "scripts"
 RUN_LOG = LOG_DIR / "run_log.txt"
+RUN_LOG_JSONL = LOG_DIR / "run_log.jsonl"
 BANKROLL = PNL_DIR / "bankroll.json"
 LOCK_FILE = LOG_DIR / "sports_system_runner.lock"
 WORKBOOK_LOCK_DIR = ROOT / "locks"
@@ -317,6 +318,20 @@ def log(msg: str) -> None:
     # Accumulate log lines for the single end-of-task Obsidian summary sync in main()'s finally.
     _task_log_lines.append(line)
     safe_print(line)
+
+
+def append_run_record(record: dict[str, Any]) -> None:
+    """Append one JSON line to run_log.jsonl (OBS-01).
+
+    Defensive: swallows any I/O error so a log-write failure never crashes a task.
+    Uses open("a") to append — never overwrites prior records.
+    """
+    try:
+        ensure_dirs()
+        with RUN_LOG_JSONL.open("a") as f:
+            f.write(json.dumps(record, sort_keys=True) + "\n")
+    except Exception:
+        pass
 
 
 def env_value(key: str) -> str | None:
