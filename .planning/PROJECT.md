@@ -32,12 +32,13 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 - ✓ Resilience safety net — subprocess stages re-run once with backoff (RES-01), post-completion `BrokenPipeError` reclassified at the task boundary so a closed cron pipe no longer fires `TASK FAILED` (RES-02), every task enforces a SIGALRM hard wall-clock budget that self-terminates cleanly before the cron kill (RES-03), and every Phase-2 fix is regression-tested (RES-04) — Phase 3
 - ✓ Cron timeout root cause resolved at the ceiling, not by clamping — the Hermes `cron.script_timeout_seconds` was 120s while tasks genuinely run up to ~509s (orphan-killing them mid-run); raised to 720s with RES-03 budgets at 660s self-terminating just below it — Phase 3
 - ✓ Observability layer — every runner invocation appends a structured Core+ JSONL record to `data/pnl/logs/run_log.jsonl` (OBS-01); a standalone read-only `health_check.py` reports overdue / last-failed tasks with a non-zero exit + 🩺 heartbeat (OBS-02); a 🔁 REPEATED FAILURE alert fires on consecutive failures, additive to the per-occurrence ❌/⏱ alerts (OBS-03) — Phase 4 (55 tests; live cron/Telegram end-to-end pending human UAT)
+- ✓ CI gate catches breakage before cron does — a committed `hooks/pre-push` (wired via `core.hooksPath=hooks` by `install_hooks.py`) runs a fast-subset gate (`run_ci_gate.py`: fail-loud preflight asserting python3 3.14 + `requests`/`openpyxl` + `scripts/` CWD, then a 3-file-denylist pytest) on every `git push`; an environment guard test proves the python3/`scripts/` contract (CI-02), and `repro_ci_regression.py` fault-injection proves the gate goes RED on a real regression and GREEN on revert (CI-01) — Phase 5 (8/8 verified; end-to-end push-fire pending human UAT — no git remote yet)
 
 ### Active
 
 <!-- This milestone. Hypotheses until shipped and validated. -->
 
-- [ ] CI runs the test suite to catch breakage before cron does
+- (none — all milestone requirements validated)
 
 ### Out of Scope
 
@@ -101,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-21 after Phase 4 (Observability) completion*
+*Last updated: 2026-06-21 after Phase 5 (CI) completion — Stability Hardening milestone complete (17/17 plans, all requirements validated)*
