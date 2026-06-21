@@ -122,14 +122,11 @@ class TestRecordShape(unittest.TestCase):
         raise_timeout: bool = False,
     ) -> int:
         """Run main() with a patched run_task() and lockfile/fcntl bypassed."""
+        import contextlib
         import fcntl as _fcntl
-
-        orig_flock = _fcntl.flock
 
         def _noop_flock(fd: Any, op: Any) -> None:
             pass  # skip exclusive file lock in tests
-
-        import contextlib
 
         @contextlib.contextmanager
         def _fake_task_locks(task_name: str):  # type: ignore[misc]
@@ -143,6 +140,7 @@ class TestRecordShape(unittest.TestCase):
             return {"status": "ok", "task": task_name}
 
         with (
+            patch("sys.argv", ["sports_system_runner.py", "--task", task]),
             patch.object(_fcntl, "flock", _noop_flock),
             patch.object(runner, "run_task", _fake_run_task),
             patch.object(runner, "task_workbook_locks", _fake_task_locks),
@@ -150,7 +148,7 @@ class TestRecordShape(unittest.TestCase):
             patch.object(runner, "send_telegram", lambda *a, **k: True),
             patch.object(runner, "obsidian_sync", lambda *a, **k: None),
         ):
-            return runner.main(["--task", task])
+            return runner.main()
 
     def test_ok_record_shape(self) -> None:
         """A successful run emits status='ok', error=None, exit_code=0, all 7 keys."""
@@ -218,6 +216,7 @@ class TestSportDerivation(unittest.TestCase):
             return {"status": "ok", "task": task_name}
 
         with (
+            patch("sys.argv", ["sports_system_runner.py", "--task", task]),
             patch.object(_fcntl, "flock", lambda *a, **k: None),
             patch.object(runner, "run_task", _fake_run_task),
             patch.object(runner, "task_workbook_locks", _fake_task_locks),
@@ -225,7 +224,7 @@ class TestSportDerivation(unittest.TestCase):
             patch.object(runner, "send_telegram", lambda *a, **k: True),
             patch.object(runner, "obsidian_sync", lambda *a, **k: None),
         ):
-            runner.main(["--task", task])
+            runner.main()
         records = _load_jsonl(runner.RUN_LOG_JSONL)
         return records[-1]
 

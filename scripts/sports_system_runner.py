@@ -5696,6 +5696,10 @@ def main() -> int:
     # RES-02: sentinel set after run_task() completes; None while task is in-flight.
     # A BrokenPipeError is only reclassified as non-fatal when this is not None (D-08).
     _task_result: dict[str, Any] | None = None
+    # OBS-01: per-outcome tracking variables for JSONL record; updated in except branches.
+    _run_status: str = "ok"
+    _run_error: str | None = None
+    _run_exit_code: int = 0
     budget = TASK_TIMEOUTS.get(args.task, 60)
     old_handler = signal.signal(signal.SIGALRM, _sigalrm_handler)
     signal.alarm(budget)
@@ -5724,6 +5728,9 @@ def main() -> int:
         safe_print("JSON_RESULT=" + json.dumps(
             {"status": "timeout", "task": args.task, "budget_s": budget}, sort_keys=True
         ))
+        # OBS-01: record timeout outcome for JSONL emit in finally.
+        _run_status = "timeout"
+        _run_exit_code = 1
         return 1
     except Exception as e:
         # RES-02: if the task completed and the pipe closed afterward, log and exit clean.
@@ -5742,6 +5749,10 @@ def main() -> int:
         log(f"ERROR task={args.task}: {e}")
         send_telegram(f"❌ SPORTS TASK FAILED: {args.task}\nError: {e}")
         safe_print("JSON_RESULT=" + json.dumps(err, sort_keys=True))
+        # OBS-01: record error outcome for JSONL emit in finally.
+        _run_status = "error"
+        _run_error = str(e)
+        _run_exit_code = 1
         return 1
     finally:
         # RES-03: always cancel SIGALRM and restore the prior handler, even on timeout/error.
@@ -5755,6 +5766,23 @@ def main() -> int:
         # The trip-time message cannot know the count — suppression accrues after trip.
         if _telegram_breaker["tripped"] and _telegram_breaker["suppressed"]:
             log(f"Telegram breaker suppressed {_telegram_breaker['suppressed']} alerts this run — Telegram unreachable")
+        # OBS-01: emit one structured JSONL record per invocation (D-01/D-02).
+        # Slots BEFORE Obsidian sync; assembly uses only tracking vars (never out-of-scope `e`).
+        try:
+            _obs01_sport: str | None = (
+                args.task.split("_")[0] if args.task.startswith(("nba_", "mlb_")) else None
+            )
+            append_run_record({
+                "task": args.task,
+                "status": _run_status,
+                "duration_s": round(elapsed, 1),
+                "error": _run_error,
+                "timestamp": now_iso(),
+                "exit_code": _run_exit_code,
+                "sport": _obs01_sport,
+            })
+        except Exception:
+            pass
         # Single end-of-task Obsidian sync (D-04): fires on BOTH success and failure.
         # Uses the implemented `sports_run_log` trigger (appends to Meta/RunLog.md).
         # CR-01 fix: the prior trigger name was not wired into the handler and was silently dropped.
