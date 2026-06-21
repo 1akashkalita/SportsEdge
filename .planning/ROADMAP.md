@@ -60,7 +60,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Each task invocation enforces a hard internal timeout; a hung stage exits cleanly with an error log rather than waiting to be killed by the cron wrapper
   4. Running the test suite shows at least one regression test per Phase 2 fix, each test failing on the pre-fix code path and passing on the post-fix code path
 **Plans**: 3 plans
-  - [ ] 03-01-PLAN.md — Runner resilience: subprocess re-run + pipe reclassification + SIGALRM per-task timeout (RES-01, RES-02, RES-03)
+  - [x] 03-01-PLAN.md — Runner resilience: subprocess re-run + pipe reclassification + SIGALRM per-task timeout (RES-01, RES-02, RES-03)
   - [ ] 03-02-PLAN.md — RES-01 + RES-03 regression tests (subprocess retry, isolated SIGALRM timeout) (RES-01, RES-03, RES-04)
   - [ ] 03-03-PLAN.md — RES-02 pipe-reclassify test + Phase-2 audit + full-suite regression sweep (RES-02, RES-04)
 
@@ -94,6 +94,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Diagnosis | 3/3 | Complete   | 2026-06-15 |
 | 2. Reliability Fixes + Defect Removal | 5/5 | Complete   | 2026-06-20 |
-| 3. Resilience | 0/3 | Planned | - |
+| 3. Resilience | 1/3 | In Progress|  |
 | 4. Observability | 0/TBD | Not started | - |
 | 5. CI | 0/TBD | Not started | - |
