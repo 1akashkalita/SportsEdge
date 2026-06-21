@@ -1,0 +1,24 @@
+#!/bin/sh
+# pre-push: run the fast CI subset from scripts/ with python3 (CI-01/CI-02).
+#
+# Called by "git push" after it has checked the remote status, but before
+# anything has been pushed. A non-zero exit blocks the push (D-01).
+#
+# The gate MUST run from scripts/ (not the repo root) because sibling imports
+# and ambient deps require it (CI-02 footgun prevention). This hook resolves
+# REPO_ROOT portably so it works regardless of where git invokes it from.
+#
+# Bypass (accepted, documented escape hatch — operator's own machine):
+#   git push --no-verify
+#
+# Re-install after a fresh clone:
+#   cd scripts && python3 install_hooks.py
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT/scripts" || exit 1
+python3 run_ci_gate.py
+status=$?
+if [ "$status" -ne 0 ]; then
+    echo >&2 "pre-push: CI gate failed (exit $status) — push blocked. Bypass: git push --no-verify"
+fi
+exit "$status"
