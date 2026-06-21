@@ -5774,6 +5774,14 @@ def main() -> int:
         # RES-03: distinct timeout alert — separate from ❌ SPORTS TASK FAILED (D-06).
         log(f"TIMEOUT task={args.task}: exceeded {budget}s wall-clock budget")
         send_telegram(f"⏱ TASK TIMED OUT: {args.task}\nBudget: {budget}s exceeded")
+        # OBS-03: 🔁 REPEATED FAILURE alert fires AFTER ⏱, never instead of it (D-09).
+        # Combines prior trailing failures with the current timeout (+1).
+        _obs03_streak = trailing_failure_streak(args.task) + 1
+        if _obs03_streak >= REPEATED_FAILURE_THRESHOLD:
+            send_telegram(
+                f"🔁 REPEATED FAILURE: {args.task} failed {_obs03_streak} times in a row\n"
+                f"Last error: budget {budget}s exceeded (timeout)"
+            )
         safe_print("JSON_RESULT=" + json.dumps(
             {"status": "timeout", "task": args.task, "budget_s": budget}, sort_keys=True
         ))
@@ -5797,6 +5805,14 @@ def main() -> int:
             pass
         log(f"ERROR task={args.task}: {e}")
         send_telegram(f"❌ SPORTS TASK FAILED: {args.task}\nError: {e}")
+        # OBS-03: 🔁 REPEATED FAILURE alert fires AFTER ❌, never instead of it (D-09).
+        # Combines prior trailing failures with the current error (+1).
+        _obs03_streak = trailing_failure_streak(args.task) + 1
+        if _obs03_streak >= REPEATED_FAILURE_THRESHOLD:
+            send_telegram(
+                f"🔁 REPEATED FAILURE: {args.task} failed {_obs03_streak} times in a row\n"
+                f"Last error: {e}"
+            )
         safe_print("JSON_RESULT=" + json.dumps(err, sort_keys=True))
         # OBS-01: record error outcome for JSONL emit in finally.
         _run_status = "error"
