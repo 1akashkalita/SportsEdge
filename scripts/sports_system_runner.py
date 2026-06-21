@@ -5661,6 +5661,12 @@ def main() -> int:
     if not args.task:
         parser.error("--task is required unless --test-telegram is used")
     task_start_time = time.time()
+    # RES-02: sentinel set after run_task() completes; None while task is in-flight.
+    # A BrokenPipeError is only reclassified as non-fatal when this is not None (D-08).
+    _task_result: dict[str, Any] | None = None
+    budget = TASK_TIMEOUTS.get(args.task, 60)
+    old_handler = signal.signal(signal.SIGALRM, _sigalrm_handler)
+    signal.alarm(budget)
     try:
         # Reset per-invocation state so each task run starts with a fresh breaker and log buffer.
         _telegram_breaker["consecutive_failures"] = 0
@@ -5673,10 +5679,25 @@ def main() -> int:
             lock.flush()
             with task_workbook_locks(args.task):
                 result = run_task(args.task)
+        # RES-02: mark task as complete OUTSIDE the locks block so any exception inside
+        # run_task() leaves _task_result as None and still fires the TASK FAILED alert.
+        _task_result = result
         dispatch_alerts(args.task, result)
         safe_print("JSON_RESULT=" + json.dumps(result, sort_keys=True))
         return 0
+    except TaskTimeoutError as e:
+        # RES-03: distinct timeout alert — separate from ❌ SPORTS TASK FAILED (D-06).
+        log(f"TIMEOUT task={args.task}: exceeded {budget}s wall-clock budget")
+        send_telegram(f"⏱ TASK TIMED OUT: {args.task}\nBudget: {budget}s exceeded")
+        safe_print("JSON_RESULT=" + json.dumps(
+            {"status": "timeout", "task": args.task, "budget_s": budget}, sort_keys=True
+        ))
+        return 1
     except Exception as e:
+        # RES-02: if the task completed and the pipe closed afterward, log and exit clean.
+        if _task_result is not None and isinstance(e, BrokenPipeError):
+            log("WARNING: BrokenPipeError after task completion — cron pipe closed; task data persisted")
+            return 0
         err = {"status": "error", "task": args.task, "error": str(e), "traceback": traceback.format_exc()}
         # D-03/D-04: Additive traceback dump to robust file sink — never stdout.
         try:
@@ -5691,6 +5712,9 @@ def main() -> int:
         safe_print("JSON_RESULT=" + json.dumps(err, sort_keys=True))
         return 1
     finally:
+        # RES-03: always cancel SIGALRM and restore the prior handler, even on timeout/error.
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
         elapsed = time.time() - task_start_time
         log(f"[{args.task}] completed in {elapsed:.1f}s")
         if elapsed > 90:
