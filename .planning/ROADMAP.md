@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Diagnosis** - Root-cause the broken pipe and timeout failures with evidence (completed 2026-06-15)
 - [x] **Phase 2: Reliability Fixes + Defect Removal** - Eliminate the confirmed failure modes and remove stability-threatening dead code (completed 2026-06-20)
-- [ ] **Phase 3: Resilience** - Add retries, hard timeouts, and SIGPIPE handling so transient faults are tolerated rather than fatal
+- [x] **Phase 3: Resilience** - Add retries, hard timeouts, and SIGPIPE handling so transient faults are tolerated rather than fatal (completed 2026-06-21)
 - [ ] **Phase 4: Observability** - Structured run logs, a heartbeat check, and pattern-aware alerting
 - [ ] **Phase 5: CI** - Automated test suite on every change, with correct interpreter and working directory
 
@@ -62,7 +62,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
   - [x] 03-01-PLAN.md — Runner resilience: subprocess re-run + pipe reclassification + SIGALRM per-task timeout (RES-01, RES-02, RES-03)
   - [x] 03-02-PLAN.md — RES-01 + RES-03 regression tests (subprocess retry, isolated SIGALRM timeout) (RES-01, RES-03, RES-04)
-  - [ ] 03-03-PLAN.md — RES-02 pipe-reclassify test + Phase-2 audit + full-suite regression sweep (RES-02, RES-04)
+  - [x] 03-03-PLAN.md — RES-02 pipe-reclassify test + Phase-2 audit + full-suite regression sweep (RES-02, RES-04)
 
 ### Phase 4: Observability
 **Goal**: The operator can review a structured record of every run after the fact, know at a glance whether a scheduled task ran and succeeded, and receive a qualitatively different alert when failures repeat in a pattern rather than just once
@@ -94,6 +94,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Diagnosis | 3/3 | Complete   | 2026-06-15 |
 | 2. Reliability Fixes + Defect Removal | 5/5 | Complete   | 2026-06-20 |
-| 3. Resilience | 2/3 | In Progress|  |
+| 3. Resilience | 3/3 | Complete   | 2026-06-21 |
 | 4. Observability | 0/TBD | Not started | - |
 | 5. CI | 0/TBD | Not started | - |
