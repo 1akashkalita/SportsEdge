@@ -351,6 +351,55 @@ def env_value(key: str) -> str | None:
     return None
 
 
+# OBS-03: consecutive-failure threshold before the 🔁 REPEATED FAILURE alert fires.
+# Configurable via the REPEATED_FAILURE_THRESHOLD env var (int, default 2).
+# A malformed or empty value falls back to 2 without raising. Placed after env_value().
+try:
+    REPEATED_FAILURE_THRESHOLD: int = max(1, int(env_value("REPEATED_FAILURE_THRESHOLD") or "2"))
+except Exception:
+    REPEATED_FAILURE_THRESHOLD = 2
+
+
+def trailing_failure_streak(task: str) -> int:
+    """Count consecutive trailing error/timeout records in run_log.jsonl for this task.
+
+    Reads only PRIOR records (the current run's record is written in finally, AFTER
+    the except branch that calls this — D-09). Returns the count of trailing records
+    whose status is "error" or "timeout", stopping at the first status=="ok" (D-08 reset).
+
+    Always returns 0 on any I/O or parse error — this runs on the failure path and must
+    never make a bad situation worse.
+    """
+    try:
+        if not RUN_LOG_JSONL.exists():
+            return 0
+        lines = RUN_LOG_JSONL.read_text().splitlines()
+        # Parse only records for this task; skip blank/corrupt lines.
+        task_records: list[dict] = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                rec = json.loads(stripped)
+            except Exception:
+                continue
+            if isinstance(rec, dict) and rec.get("task") == task:
+                task_records.append(rec)
+        # Walk backward counting trailing error/timeout records; stop at first ok.
+        count = 0
+        for rec in reversed(task_records):
+            status = rec.get("status", "")
+            if status in {"error", "timeout"}:
+                count += 1
+            elif status == "ok":
+                break
+            # Unknown status values are ignored (neither count nor reset).
+        return count
+    except Exception:
+        return 0
+
+
 def send_telegram(message: str, retries: int = 2, backoff: int = 5) -> bool:
     """Send a real Telegram alert to the configured Hermes home channel without crashing tasks."""
     token = env_value("TELEGRAM_BOT_TOKEN")
