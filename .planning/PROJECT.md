@@ -31,12 +31,12 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 - ✓ Stability-threatening defects removed — duplicate `injury_monitor`/`clv_tracker` defs deleted (DEF-01); `generate_projections.py` BASE de-hardcoded to `Path.home()` (DEF-02) — Phase 2
 - ✓ Resilience safety net — subprocess stages re-run once with backoff (RES-01), post-completion `BrokenPipeError` reclassified at the task boundary so a closed cron pipe no longer fires `TASK FAILED` (RES-02), every task enforces a SIGALRM hard wall-clock budget that self-terminates cleanly before the cron kill (RES-03), and every Phase-2 fix is regression-tested (RES-04) — Phase 3
 - ✓ Cron timeout root cause resolved at the ceiling, not by clamping — the Hermes `cron.script_timeout_seconds` was 120s while tasks genuinely run up to ~509s (orphan-killing them mid-run); raised to 720s with RES-03 budgets at 660s self-terminating just below it — Phase 3
+- ✓ Observability layer — every runner invocation appends a structured Core+ JSONL record to `data/pnl/logs/run_log.jsonl` (OBS-01); a standalone read-only `health_check.py` reports overdue / last-failed tasks with a non-zero exit + 🩺 heartbeat (OBS-02); a 🔁 REPEATED FAILURE alert fires on consecutive failures, additive to the per-occurrence ❌/⏱ alerts (OBS-03) — Phase 4 (55 tests; live cron/Telegram end-to-end pending human UAT)
 
 ### Active
 
 <!-- This milestone. Hypotheses until shipped and validated. -->
 
-- [ ] Observability added: structured run logs, a health/heartbeat check, and alerting on failure patterns
 - [ ] CI runs the test suite to catch breakage before cron does
 
 ### Out of Scope
@@ -101,4 +101,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-21 after Phase 3 (Resilience) completion*
+*Last updated: 2026-06-21 after Phase 4 (Observability) completion*
