@@ -100,26 +100,27 @@ _task_log_lines: list[str] = []
 # handler can kill the in-flight child before raising TaskTimeoutError.
 _current_subprocess: subprocess.Popen | None = None
 
-# RES-03: Per-task wall-clock budgets (seconds). These are RUNAWAY-CATCHERS, not a
-# fit to any external hard-kill. Empirically (run_log.txt) healthy runs reach ~509 s
-# (mlb_daily_picks), ~394 s (check_results), and ~357 s (game_completion_monitor),
-# and no 120 s cron hard-kill was ever observed firing. Budgets sit comfortably above
-# observed worst-case so a healthy run never trips the alarm, while a true hang (e.g.
-# the pre-Phase-2 send_telegram retry loop at 24,923 s) is still killed. Bonus: at
-# these levels the 300/600 s subprocess stage timeouts can fire before the alarm, so
-# RES-01's stage retry is actually reachable. Tune upward if a legitimate run trips one.
+# RES-03: Per-task wall-clock budgets (seconds). Each self-terminates a task CLEANLY
+# (subprocess kill + ⏱ TASK TIMED OUT alert) just BEFORE Hermes's external hard kill.
+# That external kill was raised 120 -> 720 s in ~/.hermes/config.yaml
+# (cron.script_timeout_seconds) on 2026-06-21: sports tasks genuinely run up to ~509 s
+# (mlb_daily_picks), and the old 120 s default was orphan-killing them mid-run. All
+# budgets are 660 s — comfortably above observed worst-case (~509 s) so a healthy run
+# never trips, with ~60 s headroom under the 720 s Hermes kill for the clean-shutdown
+# sequence. INVARIANT: keep every budget strictly below cron.script_timeout_seconds;
+# if that Hermes value changes, retune these together.
 TASK_TIMEOUTS: dict[str, int] = {
-    "nba_daily_picks": 900,
-    "mlb_daily_picks": 900,
-    "nba_prop_monitor": 600,
-    "mlb_prop_monitor": 600,
-    "nba_clv_tracker": 600,
-    "mlb_clv_tracker": 600,
-    "nba_injury_monitor": 600,
-    "mlb_injury_monitor": 600,
-    "game_completion_monitor": 600,
-    "check_results": 900,
-    "verify": 300,
+    "nba_daily_picks": 660,
+    "mlb_daily_picks": 660,
+    "nba_prop_monitor": 660,
+    "mlb_prop_monitor": 660,
+    "nba_clv_tracker": 660,
+    "mlb_clv_tracker": 660,
+    "nba_injury_monitor": 660,
+    "mlb_injury_monitor": 660,
+    "game_completion_monitor": 660,
+    "check_results": 660,
+    "verify": 660,
 }
 
 
