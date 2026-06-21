@@ -86,7 +86,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. A push or pull-request event triggers the test suite automatically and the result (pass/fail) is visible without manual intervention
   2. CI invokes the suite with `python3` from the `scripts/` directory, matching production; a test that requires the `scripts/` working directory or the `python3` interpreter passes in CI and would fail if run with `python` from the project root
   3. A deliberate regression introduced to a tested code path causes the CI run to fail and surface the failure within the CI report
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 05-01-PLAN.md — Fast-subset CI gate runner (run_ci_gate.py: D-05 preflight + D-03 denylist) + CI-02 environment guard test (CI-01, CI-02)
+  - [ ] 05-02-PLAN.md — Committed pre-push git hook + installer (D-01) + [BLOCKING] D-04 clean-green execution gate (CI-01, CI-02)
+  - [ ] 05-03-PLAN.md — Criterion-3 deliberate-regression fault-injection proof (RES-04 rigor: gate RED on fault, GREEN on revert) (CI-01)
 
 ## Progress
 
@@ -99,4 +102,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Reliability Fixes + Defect Removal | 5/5 | Complete   | 2026-06-20 |
 | 3. Resilience | 3/3 | Complete   | 2026-06-21 |
 | 4. Observability | 3/3 | Complete   | 2026-06-21 |
-| 5. CI | 0/TBD | Not started | - |
+| 5. CI | 0/3 | Not started | - |
