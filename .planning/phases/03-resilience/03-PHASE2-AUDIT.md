@@ -97,4 +97,49 @@ No Phase-2 test files were modified during this audit. All changes in Plan 03 ar
 
 ## Full-Suite Regression Sweep
 
-*This section is appended by Task 3 after the full suite run.*
+**Run date:** 2026-06-21
+**Command:** `cd scripts && python3 -m pytest -q`
+**Runtime:** 846.60s (14 minutes, 6 seconds)
+
+**Result:**
+
+```
+........................................................................ [ 32%]
+FF...................................................................... [ 64%]
+........................................................................ [ 96%]
+........                                                                 [100%]
+=================================== FAILURES ===================================
+__ ProjectionProbabilityTests.test_castle_points_assists_case_has_negative_ev __
+  AssertionError: 21.418 != 23.905 within 3 places (2.487000000000002 difference)
+  test_generate_projections.py:79: AssertionError
+_ ProjectionProbabilityTests.test_kat_pra_case_uses_projection_line_sigma_not_hit_rate _
+  AssertionError: 31.796 != 32.651 within 3 places (0.855000000000004 difference)
+  test_generate_projections.py:66: AssertionError
+=========================== short test summary info ===========================
+FAILED test_generate_projections.py::ProjectionProbabilityTests::test_castle_points_assists_case_has_negative_ev
+FAILED test_generate_projections.py::ProjectionProbabilityTests::test_kat_pra_case_uses_projection_line_sigma_not_hit_rate
+2 failed, 222 passed in 846.60s (0:14:06)
+```
+
+**Verdict: GREEN — baseline met.**
+
+- **Failures:** 2 — exactly the pre-existing `test_generate_projections.py` failures
+  (stale hit-rate data / projection numeric drift). These are NOT caused by Phase 3.
+- **New failures introduced by Phase 3:** 0
+- **Total passed:** 222 (up from 202 at Phase-2 baseline — 20 new tests from Phase-3
+  plans 02 and 03 all passing)
+
+**Phase-3 RES-* tests in the passed set:**
+- `test_res01_subprocess_retry.py` — 3 tests (RES-01 retry: nonzero-exit, clean-exit D-02, propagate-after-2-failures)
+- `test_res02_pipe_reclassify.py` — 2 tests (RES-02: post-completion no-alert; pre-completion D-08 negative proof)
+- `test_res03_task_timeout.py` — 2 tests (RES-03: hung-task SIGALRM; healthy-task alarm cancel)
+
+**Phase-2 audit tests in the passed set:**
+- `test_fix01_broken_pipe.py` — 1 test (FIX-01 safe_print sweep)
+- `test_fix02_telegram_circuit_breaker.py` — 3 tests (FIX-02 circuit-breaker)
+- `test_def01_no_duplicate_defs.py` — 5 tests (DEF-01 duplicate def removal)
+- `test_def02_path_resolution.py` — 5 tests (DEF-02 path portability)
+
+**Pre-existing failures are NOT touched:** Both failures are in numeric projection
+calculations that depend on live hit-rate data files; they are expected and documented
+in project memory. No action taken on these per the baseline constraint.
