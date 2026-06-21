@@ -150,27 +150,37 @@ def _subprocess_run_with_retry(
     caught here — it unwinds past the retry loop so the alarm always wins over the retry.
     """
     global _current_subprocess
+    # subprocess.run accepts capture_output=/text=; subprocess.Popen does NOT accept
+    # capture_output. Translate it to explicit PIPE redirection (CR-01) so the helper
+    # can drain both streams concurrently via communicate() (CR-02).
+    if kwargs.pop("capture_output", False):
+        kwargs.setdefault("stdout", subprocess.PIPE)
+        kwargs.setdefault("stderr", subprocess.PIPE)
     for attempt in range(2):
+        proc = subprocess.Popen(cmd, **kwargs)
+        _current_subprocess = proc
         try:
-            proc = subprocess.Popen(cmd, **kwargs)
-            _current_subprocess = proc
             try:
-                proc.wait(timeout=timeout)
+                # communicate() reads stdout/stderr concurrently with waiting, so a
+                # chatty-but-healthy child (large hit-rate/projection JSON) cannot
+                # deadlock on a full OS pipe buffer (CR-02).
+                stdout, stderr = proc.communicate(timeout=timeout)
             finally:
                 _current_subprocess = None
-            stdout = proc.stdout.read() if proc.stdout else b""
-            stderr = proc.stderr.read() if proc.stderr else b""
-            if kwargs.get("text"):
-                stdout = stdout if isinstance(stdout, str) else stdout.decode("utf-8", errors="replace")
-                stderr = stderr if isinstance(stderr, str) else stderr.decode("utf-8", errors="replace")
-            cp = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
         except subprocess.TimeoutExpired:
-            _current_subprocess = None
+            # Kill and reap the timed-out child BEFORE retrying so we never leave a
+            # live-but-untracked subprocess doubling network load (WR-01/WR-02).
+            try:
+                proc.kill()
+                proc.communicate()
+            except Exception:
+                pass
             if attempt == 0:
                 log(f"WARNING: {context} timed out on attempt 1/2; retrying in {backoff}s")
                 time.sleep(backoff)
                 continue
             raise
+        cp = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
         if cp.returncode != 0:
             if attempt == 0:
                 log(f"WARNING: {context} exited {cp.returncode} on attempt 1/2; retrying in {backoff}s")
@@ -5685,7 +5695,7 @@ def main() -> int:
         dispatch_alerts(args.task, result)
         safe_print("JSON_RESULT=" + json.dumps(result, sort_keys=True))
         return 0
-    except TaskTimeoutError as e:
+    except TaskTimeoutError:
         # RES-03: distinct timeout alert — separate from ❌ SPORTS TASK FAILED (D-06).
         log(f"TIMEOUT task={args.task}: exceeded {budget}s wall-clock budget")
         send_telegram(f"⏱ TASK TIMED OUT: {args.task}\nBudget: {budget}s exceeded")

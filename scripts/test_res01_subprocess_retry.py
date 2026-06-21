@@ -28,6 +28,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import subprocess
+import sys
 import time
 import unittest
 from pathlib import Path
@@ -66,6 +67,13 @@ class _FakePopen:
         if self._raise_timeout:
             raise subprocess.TimeoutExpired(cmd="fake", timeout=timeout or 0)
         return self.returncode
+
+    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+        # Mirrors the real Popen.communicate the helper drains with: returns
+        # (stdout, stderr) and raises TimeoutExpired on the timeout path.
+        if self._raise_timeout:
+            raise subprocess.TimeoutExpired(cmd="fake", timeout=timeout or 0)
+        return self.stdout.read(), self.stderr.read()
 
     def kill(self) -> None:
         pass
@@ -177,6 +185,55 @@ class TestRes01SubprocessRetry(unittest.TestCase):
                 ),
             ):
                 runner.run_fetch_dfs_props("nba")
+
+
+class TestRes01RealChild(unittest.TestCase):
+    """WR-04: drive ``_subprocess_run_with_retry`` against a REAL child process.
+
+    The fake-Popen tests above assert retry *counting* but cannot catch the two
+    production defects the standard fake masks:
+      - CR-01: call sites pass ``capture_output=True``, which real ``subprocess.Popen``
+        rejects (``TypeError``). The fake discards all kwargs, so it never validates
+        the signature.
+      - CR-02: ``wait()``-then-``read()`` deadlocks once a healthy child fills the OS
+        pipe buffer. The fake backs stdout with an empty ``io.StringIO``, so the
+        pipe-buffer path is never exercised.
+    These tests run the helper exactly as the daily-picks stages do (real interpreter
+    child, ``capture_output=True, text=True``) so a regression to either defect fails
+    loudly. They do not patch ``time.sleep`` because a healthy child exits 0 and never
+    reaches the retry/backoff path.
+    """
+
+    def setUp(self) -> None:
+        self._original_log = runner.log
+        runner.log = lambda msg: None  # silence stage warnings
+
+    def tearDown(self) -> None:
+        runner.log = self._original_log
+
+    def test_capture_output_against_real_popen(self) -> None:
+        """capture_output=True must be honored against the real Popen (CR-01 guard)."""
+        cp = runner._subprocess_run_with_retry(
+            [sys.executable, "-c", "print('hello-res01')"],
+            timeout=30,
+            context="real-child capture",
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(cp.returncode, 0)
+        self.assertIn("hello-res01", cp.stdout)
+
+    def test_large_stdout_does_not_deadlock(self) -> None:
+        """A healthy child writing >64KB must not deadlock the drain (CR-02 guard)."""
+        cp = runner._subprocess_run_with_retry(
+            [sys.executable, "-c", "import sys; sys.stdout.write('x' * 200000)"],
+            timeout=30,
+            context="real-child large-stdout",
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(cp.returncode, 0)
+        self.assertEqual(len(cp.stdout), 200000)
 
 
 if __name__ == "__main__":
