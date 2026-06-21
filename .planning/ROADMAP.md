@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Reliability Fixes + Defect Removal** - Eliminate the confirmed failure modes and remove stability-threatening dead code (completed 2026-06-20)
 - [x] **Phase 3: Resilience** - Add retries, hard timeouts, and SIGPIPE handling so transient faults are tolerated rather than fatal (completed 2026-06-21)
 - [x] **Phase 4: Observability** - Structured run logs, a heartbeat check, and pattern-aware alerting (completed 2026-06-21)
-- [ ] **Phase 5: CI** - Automated test suite on every change, with correct interpreter and working directory
+- [x] **Phase 5: CI** - Automated test suite on every change, with correct interpreter and working directory (completed 2026-06-21)
 
 ## Phase Details
 
@@ -89,7 +89,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
   - [x] 05-01-PLAN.md — Fast-subset CI gate runner (run_ci_gate.py: D-05 preflight + D-03 denylist) + CI-02 environment guard test (CI-01, CI-02)
   - [x] 05-02-PLAN.md — Committed pre-push git hook + installer (D-01) + [BLOCKING] D-04 clean-green execution gate (CI-01, CI-02)
-  - [ ] 05-03-PLAN.md — Criterion-3 deliberate-regression fault-injection proof (RES-04 rigor: gate RED on fault, GREEN on revert) (CI-01)
+  - [x] 05-03-PLAN.md — Criterion-3 deliberate-regression fault-injection proof (RES-04 rigor: gate RED on fault, GREEN on revert) (CI-01)
 
 ## Progress
 
@@ -102,4 +102,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Reliability Fixes + Defect Removal | 5/5 | Complete   | 2026-06-20 |
 | 3. Resilience | 3/3 | Complete   | 2026-06-21 |
 | 4. Observability | 3/3 | Complete   | 2026-06-21 |
-| 5. CI | 2/3 | In Progress|  |
+| 5. CI | 3/3 | Complete   | 2026-06-21 |
