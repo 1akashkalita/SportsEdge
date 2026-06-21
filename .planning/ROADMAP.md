@@ -74,7 +74,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. When the same task fails two or more times in a row, a distinct Telegram alert fires that identifies the pattern (task name, failure count, last error), separate from the per-occurrence failure alert
 **Plans**: 3 plans
   - [x] 04-01-PLAN.md — OBS-01 structured run-log: RUN_LOG_JSONL + append_run_record + finally-block emit + test (OBS-01)
-  - [ ] 04-02-PLAN.md — OBS-02 standalone read-only health_check.py: cadence map + overdue/last-failed snapshot + Telegram heartbeat + test (OBS-02)
+  - [x] 04-02-PLAN.md — OBS-02 standalone read-only health_check.py: cadence map + overdue/last-failed snapshot + Telegram heartbeat + test (OBS-02)
   - [ ] 04-03-PLAN.md — OBS-03 repeated-failure streak: REPEATED_FAILURE_THRESHOLD + trailing-streak helper + 🔁 alert in failure branches + test (OBS-03)
 **UI hint**: no
 
@@ -98,5 +98,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Diagnosis | 3/3 | Complete   | 2026-06-15 |
 | 2. Reliability Fixes + Defect Removal | 5/5 | Complete   | 2026-06-20 |
 | 3. Resilience | 3/3 | Complete   | 2026-06-21 |
-| 4. Observability | 1/3 | In Progress|  |
+| 4. Observability | 2/3 | In Progress|  |
 | 5. CI | 0/TBD | Not started | - |
