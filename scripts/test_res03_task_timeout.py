@@ -100,12 +100,12 @@ sys.exit(r.main())
 
 
 def _write_healthy_shim(shim_path: str) -> None:
-    """Write a child shim that uses the real verify with the default 60 s budget.
+    """Write a child shim that uses the real verify with its default budget.
 
     We do NOT shorten the budget here — verify does workbook I/O that takes a few
-    seconds, so a 3 s budget would cause a spurious timeout.  The default 60 s
-    budget gives verify ample headroom; the test still completes well within
-    _WAIT_TIMEOUT (33 s) since verify finishes in < 10 s.
+    seconds, so a 3 s budget would cause a spurious timeout.  The default verify
+    budget (a generous runaway-catcher) gives ample headroom; the test still
+    completes well within _WAIT_TIMEOUT (33 s) since verify finishes in < 10 s.
     """
     src = f"""\
 #!/usr/bin/env python3
@@ -115,8 +115,8 @@ import sys
 sys.path.insert(0, {str(SCRIPTS_DIR)!r})
 import sports_system_runner as r
 
-# Keep the real verify function and its default 60 s budget (workbook I/O
-# takes a few seconds — a 3 s budget would trigger a spurious timeout).
+# Keep the real verify function and its default budget (workbook I/O takes a
+# few seconds — a 3 s budget would trigger a spurious timeout).
 # The alarm is still armed and cancelled in finally; this confirms clean cancel.
 
 sys.exit(r.main())

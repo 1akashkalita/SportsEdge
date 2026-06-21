@@ -100,20 +100,26 @@ _task_log_lines: list[str] = []
 # handler can kill the in-flight child before raising TaskTimeoutError.
 _current_subprocess: subprocess.Popen | None = None
 
-# RES-03: Per-task wall-clock budgets (seconds). All values < 120 s (confirmed
-# Hermes no_agent hard-kill window); ~30 s headroom reserved for clean shutdown.
+# RES-03: Per-task wall-clock budgets (seconds). These are RUNAWAY-CATCHERS, not a
+# fit to any external hard-kill. Empirically (run_log.txt) healthy runs reach ~509 s
+# (mlb_daily_picks), ~394 s (check_results), and ~357 s (game_completion_monitor),
+# and no 120 s cron hard-kill was ever observed firing. Budgets sit comfortably above
+# observed worst-case so a healthy run never trips the alarm, while a true hang (e.g.
+# the pre-Phase-2 send_telegram retry loop at 24,923 s) is still killed. Bonus: at
+# these levels the 300/600 s subprocess stage timeouts can fire before the alarm, so
+# RES-01's stage retry is actually reachable. Tune upward if a legitimate run trips one.
 TASK_TIMEOUTS: dict[str, int] = {
-    "nba_daily_picks": 90,
-    "mlb_daily_picks": 90,
-    "nba_prop_monitor": 80,
-    "mlb_prop_monitor": 80,
-    "nba_clv_tracker": 80,
-    "mlb_clv_tracker": 80,
-    "nba_injury_monitor": 75,
-    "mlb_injury_monitor": 75,
-    "game_completion_monitor": 60,
-    "check_results": 90,
-    "verify": 60,
+    "nba_daily_picks": 900,
+    "mlb_daily_picks": 900,
+    "nba_prop_monitor": 600,
+    "mlb_prop_monitor": 600,
+    "nba_clv_tracker": 600,
+    "mlb_clv_tracker": 600,
+    "nba_injury_monitor": 600,
+    "mlb_injury_monitor": 600,
+    "game_completion_monitor": 600,
+    "check_results": 900,
+    "verify": 300,
 }
 
 
