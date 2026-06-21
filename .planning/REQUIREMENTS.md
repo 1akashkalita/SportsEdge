@@ -28,7 +28,7 @@ Requirements for this stability milestone. Each maps to a roadmap phase.
 - [x] **RES-01**: Outbound network calls (Odds-API.io, ESPN, Telegram, DFS fetchers) retry with backoff on transient failures instead of failing the whole task
 - [x] **RES-02**: Broken-pipe / `SIGPIPE` conditions are handled gracefully — logged and tolerated when non-fatal, never surfaced as a spurious `TASK FAILED`
 - [x] **RES-03**: Each task enforces a hard internal time budget so a hung stage fails cleanly (and safely, mid-write) instead of being killed by the cron wrapper
-- [ ] **RES-04**: Every reliability fix lands with a regression test that fails before the fix and passes after
+- [x] **RES-04**: Every reliability fix lands with a regression test that fails before the fix and passes after
 
 ### Observability
 
@@ -77,7 +77,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | RES-01 | Phase 3 | Complete |
 | RES-02 | Phase 3 | Complete |
 | RES-03 | Phase 3 | Complete |
-| RES-04 | Phase 3 | Pending |
+| RES-04 | Phase 3 | Complete |
 | OBS-01 | Phase 4 | Pending |
 | OBS-02 | Phase 4 | Pending |
 | OBS-03 | Phase 4 | Pending |
