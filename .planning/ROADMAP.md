@@ -62,7 +62,11 @@ Plans:
   2. Each slip's grade is derived from the trustworthy P1 prop results — a slip with all WIN legs is WIN and a slip with any LOSS leg is LOSS; slip success and individual-prop success are stored as distinct metrics
   3. The June 8–21 Slip History backfill completes without duplicate rows: re-running on a date that already has slip records for that date is idempotent
   4. An operator can distinguish slip ROI from prop win-rate at a glance from the persisted sheets (separate tracking is demonstrably present, not interleaved)
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 02-1-PLAN.md — Slip-leg grading core: date-wide box-score merge + per-leg WIN/LOSS/PUSH/abstain via reused P1 stat_value_for_prop
+- [ ] 02-2-PLAN.md — Slip aggregation + payout (calculate_slip_payout) + idempotent Slip History upsert (per-day + master); PENDING-not-LOSS on any unresolved leg
+- [ ] 02-3-PLAN.md — Build missing June 8–21 slip defs + idempotent backfill + grade_slips runner task; human-verified real-money write
 
 ### Phase 3: Slips-Only Bankroll
 **Goal**: The bankroll ledger reflects only what was actually staked and returned on DFS slips — individual prop outcomes are removed from the bankroll and preserved as a separate model-accuracy signal
@@ -95,6 +99,6 @@ Plans:
 | 4. Observability | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
-| 2. Slip Reconstruction and Grading | v2.0 | 0/TBD | Not started | - |
+| 2. Slip Reconstruction and Grading | v2.0 | 0/3 | Planned | - |
 | 3. Slips-Only Bankroll | v2.0 | 0/TBD | Not started | - |
 | 4. Dual Metrics and Feedback | v2.0 | 0/TBD | Not started | - |
