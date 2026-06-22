@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
-"""Slip-leg grading core: date-wide box-score merge + per-leg WIN/LOSS/PUSH/abstain.
+"""Slip grading: date-wide box-score merge, per-leg grading, slip aggregation, and idempotent
+Slip History persistence.
 
-Exports:
+Exports (Wave 1):
   - LEG_PENDING  : abstain sentinel returned when a leg cannot be resolved.
   - build_date_box_scores(date, player_stats_by_sport=None) -> dict[str, dict]
   - grade_leg(leg, box_scores) -> dict[str, str | float | None]
 
-No workbook writes — persistence is Wave 2's responsibility.
-No side effects at import time.
+Exports (Wave 2):
+  - slip_id_for(date, slip) -> str
+  - grade_slip(slip, box_scores, config=None) -> dict[str, Any]
+  - write_slip_history_rows(ws, date, graded_slips) -> int
+  - grade_slips_for_date(date, *, dry_run=False, player_stats_by_sport=None) -> dict[str, Any]
 
+No side effects at import time.
 Run from scripts/ with python3 (3.14).
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +36,18 @@ _runner = importlib.import_module("sports_system_runner")
 stat_value_for_prop = _runner.stat_value_for_prop
 espn_player_stats_by_event = _runner.espn_player_stats_by_event
 espn_scoreboard_games_for_date = _runner.espn_scoreboard_games_for_date
+safe_load_workbook = _runner.safe_load_workbook
+save_workbook_atomic = _runner.save_workbook_atomic
+ensure_workbook = _runner.ensure_workbook
+master_pnl_workbook = _runner.master_pnl_workbook
+
+from slip_payouts import (
+    load_payout_config,
+    calculate_slip_payout,
+    slip_history_row,
+    ensure_slip_history_sheet,
+    SLIP_HISTORY_HEADERS,
+)
 
 # ---------------------------------------------------------------------------
 # Sentinel
@@ -40,6 +60,50 @@ LEG_PENDING: str = "PENDING"
 
 # Sports known to the system — used when iterating to build the date-wide lookup.
 _KNOWN_SPORTS: list[str] = ["NBA", "MLB"]
+
+# Path to slip definition files.
+_DATA_DIR = _SCRIPTS.parent / "data"
+_SLIPS_DIR = _DATA_DIR / "research" / "slips"
+
+# ---------------------------------------------------------------------------
+# Stat-type normalisation
+# ---------------------------------------------------------------------------
+
+# Map from DFS-platform space-separated stat_type strings (as emitted by
+# build_slips.py) to the canonical form expected by stat_value_for_prop.
+# These are ALL space-separated combo stats observed across the slip files;
+# stat_value_for_prop uses plus-separated (e.g. "hits+runs+rbis") or its own
+# canonical aliases ("pts+rebs+asts" etc.) — never bare space-separated forms.
+_STAT_NORM_MAP: dict[str, str] = {
+    # MLB batting combos
+    "hits runs rbis": "hits+runs+rbis",
+    "hits + runs + rbis": "hits+runs+rbis",
+    # MLB pitching outs ("outs" in DFS payload → "pitching outs" in disposition table)
+    "outs": "pitching outs",
+    # NBA PRA combos — DFS uses long-form "points rebounds assists"
+    "points rebounds assists": "pts+rebs+asts",
+    "points rebounds": "pts+rebs",
+    "points assists": "pts+asts",
+    "rebounds assists": "rebs+asts",
+    # DFS may also send "pts rebs asts" space-separated
+    "pts rebs asts": "pts+rebs+asts",
+    "pts rebs": "pts+rebs",
+    "pts asts": "pts+asts",
+    "rebs asts": "rebs+asts",
+}
+
+
+def _normalize_stat(stat: str) -> str:
+    """Return the canonical stat key for stat_value_for_prop.
+
+    Converts space-separated combo stat_type strings from slip definitions
+    (e.g. "hits runs rbis", "points rebounds assists") to the canonical form
+    the P1 disposition table expects (e.g. "hits+runs+rbis", "pts+rebs+asts").
+    Single-word stats (e.g. "points", "strikeouts") are returned unchanged.
+    Unknown combos are returned as-is and will abstain in stat_value_for_prop.
+    """
+    key = str(stat or "").strip().lower()
+    return _STAT_NORM_MAP.get(key, key)
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +198,10 @@ def grade_leg(
     sport_stats: dict[str, Any] = box_scores.get(sport, {})
 
     player = str(leg.get("player_name") or "")
-    stat = str(leg.get("stat_type") or "")
+    # Normalise space-separated combo stat types from the DFS payload
+    # (e.g. "hits runs rbis") to the canonical form stat_value_for_prop expects
+    # (e.g. "hits+runs+rbis").  Without this, ALL combo legs abstain to PENDING.
+    stat = _normalize_stat(str(leg.get("stat_type") or ""))
 
     actual, src, conf = stat_value_for_prop(sport_stats, player, stat)
 
@@ -162,4 +229,343 @@ def grade_leg(
         "actual": actual,
         "source": src,
         "confidence": conf,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Wave 2: Slip aggregation + Slip ID
+# ---------------------------------------------------------------------------
+
+
+def slip_id_for(date: str, slip: dict[str, Any]) -> str:
+    """Return a deterministic, stable Slip ID for idempotent Slip History upsert.
+
+    The ID is constructed from (date, category, sorted leg identities) so:
+      - The same slip on the same date always yields the same ID.
+      - Two slips with different leg sets on the same date yield different IDs.
+
+    Format: ``"<date>:<category>:<8-char sha1>"``.
+
+    Leg identity: ``prop_id`` when present, else ``"<sport>:<player>:<stat>:<line>:<side>"``.
+    Legs are sorted before hashing so insertion order cannot change the ID.
+    """
+    category = str(slip.get("category") or "")
+    legs = slip.get("legs") or []
+
+    def _leg_key(leg: dict[str, Any]) -> str:
+        if leg.get("prop_id"):
+            return str(leg["prop_id"])
+        sport = str(leg.get("sport") or "").upper()
+        player = str(leg.get("player_name") or "").lower()
+        stat = str(leg.get("stat_type") or "").lower()
+        line = str(leg.get("line") or "")
+        side = str(leg.get("side") or "").upper()
+        return f"{sport}:{player}:{stat}:{line}:{side}"
+
+    leg_keys = sorted(_leg_key(l) for l in legs)
+    payload = f"{date}|{category}|{'|'.join(leg_keys)}"
+    sha = hashlib.sha1(payload.encode()).hexdigest()[:8]
+    return f"{date}:{category}:{sha}"
+
+
+def grade_slip(
+    slip: dict[str, Any],
+    box_scores: dict[str, dict[str, Any]],
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Aggregate all legs of a slip into a slip-level result with payout.
+
+    Money-safety contract:
+      - Each leg's raw result (WIN/LOSS/PUSH/LEG_PENDING) is collected AS-IS.
+      - The raw list is passed to ``calculate_slip_payout`` as ``leg_results``
+        so its ambiguous-leg branch automatically forces MANUAL REVIEW +
+        ``needs_payout_reconciliation=True`` when ANY leg is not WIN/LOSS.
+      - DO NOT pre-collapse PENDING/PUSH to WIN/LOSS before calling
+        ``calculate_slip_payout``.
+
+    Args:
+        slip: Slip dict from ``slips_<date>.json`` with ``platform``,
+              ``slip_type``, ``stake_units``, ``legs``, ``category``.
+        box_scores: Per-sport merged player-stats lookup from
+              ``build_date_box_scores``.
+        config: Payout config dict; loaded from disk when not injected.
+
+    Returns a dict with:
+        ``slip_id``     : stable ID (from ``slip_id_for``).
+        ``category``    : slip category string.
+        ``platform``    : platform string.
+        ``slip_type``   : "power" | "flex".
+        ``stake_units`` : float (1.0 default).
+        ``legs``        : the original slip legs (for ``slip_history_row``).
+        ``payout``      : full ``calculate_slip_payout`` result dict.
+        ``leg_grades``  : list of per-leg grade dicts for audit/notes.
+    """
+    if config is None:
+        config = load_payout_config()
+
+    legs = slip.get("legs") or []
+    leg_grades: list[dict[str, Any]] = [grade_leg(leg, box_scores) for leg in legs]
+    leg_results: list[str] = [g["result"] for g in leg_grades]
+
+    winning_legs = sum(1 for r in leg_results if r == "WIN")
+    total_legs = len(legs)
+    stake_units = float(slip.get("stake_units") or 1.0)
+
+    payout = calculate_slip_payout(
+        platform=str(slip.get("platform") or "PrizePicks"),
+        slip_type=str(slip.get("slip_type") or "power"),
+        total_legs=total_legs,
+        winning_legs=winning_legs,
+        stake_units=stake_units,
+        leg_results=leg_results,  # raw statuses — includes LEG_PENDING / PUSH
+        config=config,
+    )
+
+    return {
+        "slip_id": slip_id_for(
+            str(slip.get("date") or ""), slip
+        ),  # date injected by caller when missing from slip
+        "category": str(slip.get("category") or ""),
+        "platform": str(slip.get("platform") or "PrizePicks"),
+        "slip_type": str(slip.get("slip_type") or "power"),
+        "stake_units": stake_units,
+        "legs": legs,
+        "payout": payout,
+        "leg_grades": leg_grades,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Wave 2: Idempotent Slip History upsert
+# ---------------------------------------------------------------------------
+
+def _slip_id_col_index() -> int:
+    """1-based column index of 'Slip ID' in SLIP_HISTORY_HEADERS."""
+    return SLIP_HISTORY_HEADERS.index("Slip ID") + 1
+
+
+def _date_col_index() -> int:
+    """1-based column index of 'Date' in SLIP_HISTORY_HEADERS."""
+    return SLIP_HISTORY_HEADERS.index("Date") + 1
+
+
+def write_slip_history_rows(
+    ws: Any,
+    date: str,
+    graded_slips: list[dict[str, Any]],
+) -> int:
+    """Upsert graded slip rows into a Slip History worksheet.
+
+    For each graded slip:
+      - Builds the Slip History row via ``slip_payouts.slip_history_row``.
+      - Scans existing rows for a matching (Date, Slip ID) pair.
+      - If found → overwrites that row in place (idempotent).
+      - If not found → appends a new row.
+
+    Returns the number of rows written (upserted or appended).
+    """
+    slip_id_col = _slip_id_col_index()
+    date_col = _date_col_index()
+    written = 0
+
+    for graded in graded_slips:
+        row_data = slip_history_row(
+            date,
+            graded["slip_id"],
+            graded["platform"],
+            graded["slip_type"],
+            graded["legs"],
+            graded["stake_units"],
+            graded["payout"],
+            notes=graded["payout"].get("reason", ""),
+        )
+
+        # Scan for existing (Date, Slip ID) match to upsert.
+        target_row: int | None = None
+        for r in range(2, ws.max_row + 1):
+            cell_date = ws.cell(r, date_col).value
+            cell_slip_id = ws.cell(r, slip_id_col).value
+            if str(cell_date or "") == str(date) and str(cell_slip_id or "") == graded["slip_id"]:
+                target_row = r
+                break
+
+        if target_row is not None:
+            # Overwrite existing row in place.
+            for col_idx, value in enumerate(row_data, start=1):
+                ws.cell(target_row, col_idx).value = value
+        else:
+            ws.append(row_data)
+
+        written += 1
+
+    return written
+
+
+# ---------------------------------------------------------------------------
+# Wave 2: grade_slips_for_date entry point
+# ---------------------------------------------------------------------------
+
+def grade_slips_for_date(
+    date: str,
+    *,
+    dry_run: bool = False,
+    player_stats_by_sport: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Grade all slips for a date and persist results to Slip History sheets.
+
+    Loads ``data/research/slips/slips_<date>.json``, grades every slip in
+    every category (skipping empty categories), and — unless ``dry_run=True``
+    — writes idempotent Slip History rows to:
+
+      1. The per-sport per-day workbook (``data/<sport>/<sport>_<date>.xlsx``)
+         via ``ensure_workbook`` / ``safe_load_workbook`` / ``save_workbook_atomic``.
+      2. The master P&L workbook (``data/pnl/master_pnl.xlsx``) via
+         ``master_pnl_workbook()`` / ``save_workbook_atomic``.
+
+    Slip rows go ONLY to the "Slip History" sheet; Results / Pick History
+    prop rows are never touched (SLIPS-04).
+
+    Args:
+        date: ISO date string "YYYY-MM-DD".
+        dry_run: When True, grade but do not write any workbooks.
+        player_stats_by_sport: Offline injection of box scores; no network
+            calls are made when provided.
+
+    Returns a summary dict:
+        ``status``        : "ok" | "no_slip_file"
+        ``date``          : the date string.
+        ``total_slips``   : number of slips across all categories.
+        ``win_count``     : graded slips with slip_result "GRADED" + net > 0.
+        ``loss_count``    : graded slips with slip_result "GRADED" + net <= 0.
+        ``pending_count`` : slips needing reconciliation.
+        ``rows_written``  : rows upserted/appended (0 for dry_run).
+        ``dry_run``       : bool mirror.
+        ``graded``        : list of per-slip grade dicts.
+    """
+    slip_file = _SLIPS_DIR / f"slips_{date}.json"
+    if not slip_file.exists():
+        return {
+            "status": "no_slip_file",
+            "date": date,
+            "total_slips": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "pending_count": 0,
+            "rows_written": 0,
+            "dry_run": dry_run,
+            "graded": [],
+            "message": f"No slip file at {slip_file}; run build_slips.py --date {date} first.",
+        }
+
+    payload: dict[str, Any] = json.loads(slip_file.read_text())
+    slips_by_cat: dict[str, list[dict[str, Any]]] = payload.get("slips") or {}
+
+    # Flatten all categories, skip empty.
+    all_slips: list[dict[str, Any]] = []
+    for cat, slist in slips_by_cat.items():
+        if not slist:
+            continue
+        for slip in slist:
+            # Inject date into the slip so slip_id_for has it.
+            slip_with_date = dict(slip)
+            slip_with_date.setdefault("date", date)
+            slip_with_date.setdefault("category", cat)
+            all_slips.append(slip_with_date)
+
+    if not all_slips:
+        return {
+            "status": "ok",
+            "date": date,
+            "total_slips": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "pending_count": 0,
+            "rows_written": 0,
+            "dry_run": dry_run,
+            "graded": [],
+            "message": "Slip file present but all categories empty.",
+        }
+
+    # Build date-wide box scores (one per-sport network fetch, or offline injection).
+    box_scores = build_date_box_scores(date, player_stats_by_sport)
+
+    config = load_payout_config()
+
+    # Grade each slip.  Pass date explicitly so slip_id_for is stable.
+    graded_slips: list[dict[str, Any]] = []
+    for slip in all_slips:
+        g = grade_slip(slip, box_scores, config=config)
+        # Ensure slip_id has the correct date (grade_slip uses slip["date"] we set above).
+        if not g["slip_id"].startswith(date):
+            g = dict(g)
+            g["slip_id"] = slip_id_for(date, slip)
+        graded_slips.append(g)
+
+    # Tally results.
+    win_count = sum(
+        1 for g in graded_slips
+        if g["payout"].get("slip_result") == "GRADED" and (g["payout"].get("net_pnl") or 0) > 0
+    )
+    loss_count = sum(
+        1 for g in graded_slips
+        if g["payout"].get("slip_result") == "GRADED" and (g["payout"].get("net_pnl") or 0) <= 0
+    )
+    pending_count = sum(1 for g in graded_slips if g["payout"].get("needs_payout_reconciliation"))
+
+    if dry_run:
+        return {
+            "status": "ok",
+            "date": date,
+            "total_slips": len(graded_slips),
+            "win_count": win_count,
+            "loss_count": loss_count,
+            "pending_count": pending_count,
+            "rows_written": 0,
+            "dry_run": True,
+            "graded": graded_slips,
+        }
+
+    # Persist to per-sport per-day workbooks + master.
+    rows_written = 0
+
+    # Group slips by predominant sport (derive from legs; mixed-sport → master only).
+    slips_by_sport: dict[str, list[dict[str, Any]]] = {}
+    master_only_slips: list[dict[str, Any]] = []
+    for g in graded_slips:
+        leg_sports = [str(l.get("sport") or "").upper() for l in (g["legs"] or [])]
+        sport_counts = Counter(leg_sports)
+        # Predominant sport = the sport with the most legs; must be a known sport.
+        predominant = sport_counts.most_common(1)[0][0] if sport_counts else ""
+        all_same_sport = len(set(leg_sports)) <= 1
+        if predominant in _KNOWN_SPORTS and all_same_sport:
+            slips_by_sport.setdefault(predominant, []).append(g)
+        else:
+            # Mixed-sport or unknown sport → master only.
+            master_only_slips.append(g)
+
+    # Write to per-day workbooks.
+    for sport, sport_slips in slips_by_sport.items():
+        sport_lower = sport.lower()
+        wb_path = ensure_workbook(sport_lower, date)
+        wb = safe_load_workbook(wb_path)
+        ws = ensure_slip_history_sheet(wb)
+        rows_written += write_slip_history_rows(ws, date, sport_slips)
+        save_workbook_atomic(wb, wb_path)
+
+    # Write to master_pnl Slip History (ALL slips, including the sport-bucketed ones).
+    wb_master, master_path = master_pnl_workbook()
+    ws_master = ensure_slip_history_sheet(wb_master)
+    rows_written += write_slip_history_rows(ws_master, date, graded_slips)
+    save_workbook_atomic(wb_master, master_path)
+
+    return {
+        "status": "ok",
+        "date": date,
+        "total_slips": len(graded_slips),
+        "win_count": win_count,
+        "loss_count": loss_count,
+        "pending_count": pending_count,
+        "rows_written": rows_written,
+        "dry_run": False,
+        "graded": graded_slips,
     }
