@@ -7,8 +7,8 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 ### RESULTS — Trustworthy results (Phase 1 / P1)
 
 - [ ] **RESULTS-01**: Prop grading resolves player names robustly (accents, punctuation, suffixes, "F. Last" ↔ "First Last", last-name-unique-within-game), so name-format mismatches no longer fall to MANUAL REVIEW; ambiguous matches abstain rather than guess.
-- [ ] **RESULTS-02**: NBA + MLB stat derivation covers composite/pitcher stats (Total Bases, Hits+Runs+RBIs, Singles, Pitching Outs, Blks+Stls, FG made/attempted split, etc.) via an explicit disposition table, replacing the substring fallback that caused false positives.
-- [ ] **RESULTS-03**: Batting vs pitching stat namespaces are disambiguated so shared MLB labels (strikeouts, hits, runs, walks) grade against the correct group.
+- [x] **RESULTS-02**: NBA + MLB stat derivation covers composite/pitcher stats (Total Bases, Hits+Runs+RBIs, Singles, Pitching Outs, Blks+Stls, FG made/attempted split, etc.) via an explicit disposition table, replacing the substring fallback that caused false positives.
+- [x] **RESULTS-03**: Batting vs pitching stat namespaces are disambiguated so shared MLB labels (strikeouts, hits, runs, walks) grade against the correct group.
 - [ ] **RESULTS-04**: Every graded prop row records `Result Source` (api / scraped / manual) and a numeric `Result Confidence` (additive schema columns).
 - [ ] **RESULTS-05**: A feature-flagged, keyless, subprocess-isolated firecrawl fallback resolves residual unresolved stats by scraping the box score, and degrades safely to MANUAL REVIEW on any failure/timeout/offline/rate-limit without crashing grading.
 - [ ] **RESULTS-06**: Backfill re-grading replaces MANUAL REVIEW / PENDING rows with terminal grades in place — no duplicate Results/Pick-History rows, settled WIN/LOSS/PUSH/VOID rows untouched, and no parlay mis-grade from partial leg sets.
@@ -53,8 +53,8 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
 | RESULTS-01 | Phase 1 | Pending |
-| RESULTS-02 | Phase 1 | Pending |
-| RESULTS-03 | Phase 1 | Pending |
+| RESULTS-02 | Phase 1 | Complete |
+| RESULTS-03 | Phase 1 | Complete |
 | RESULTS-04 | Phase 1 | Pending |
 | RESULTS-05 | Phase 1 | Pending |
 | RESULTS-06 | Phase 1 | Pending |

@@ -46,7 +46,7 @@ Audit: [milestones/v1.0-MILESTONE-AUDIT.md](./milestones/v1.0-MILESTONE-AUDIT.md
   5. The firecrawl fallback (flag `ENABLE_FIRECRAWL_RESULT_FALLBACK`, default off) degrades to MANUAL REVIEW on any failure, timeout, missing binary, offline, or 429 — grading never crashes and every daily run stays under the 660s cron budget
 **Plans**: 6 plans
 Plans:
-- [ ] 01-1-PLAN.md — Component 0: ESPN summary fixtures + stat_corpus oracle (testdata only)
+- [x] 01-1-PLAN.md — Component 0: ESPN summary fixtures + stat_corpus oracle (testdata only)
 - [ ] 01-2-PLAN.md — name_match + _canonical_name; batting/pitching namespace split + hit-type counts
 - [ ] 01-3-PLAN.md — stat_value_for_prop disposition table (3-tuple) + provenance columns end-to-end
 - [ ] 01-4-PLAN.md — value-aware TERMINAL_RESULTS guard + parlay full-leg-set fix + side re-parser
@@ -89,7 +89,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Diagnosis | v1.0 | 3/3 | Complete | 2026-06-15 |
+| 1. Diagnosis | v1.0 | 1/6 | In Progress|  |
 | 2. Reliability Fixes + Defect Removal | v1.0 | 5/5 | Complete | 2026-06-20 |
 | 3. Resilience | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 4. Observability | v1.0 | 3/3 | Complete | 2026-06-21 |
