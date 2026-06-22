@@ -52,4 +52,21 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| _(filled by roadmap)_ | | |
+| RESULTS-01 | Phase 1 | Pending |
+| RESULTS-02 | Phase 1 | Pending |
+| RESULTS-03 | Phase 1 | Pending |
+| RESULTS-04 | Phase 1 | Pending |
+| RESULTS-05 | Phase 1 | Pending |
+| RESULTS-06 | Phase 1 | Pending |
+| RESULTS-07 | Phase 1 | Pending |
+| SLIPS-01 | Phase 2 | Pending |
+| SLIPS-02 | Phase 2 | Pending |
+| SLIPS-03 | Phase 2 | Pending |
+| SLIPS-04 | Phase 2 | Pending |
+| BANKROLL-01 | Phase 3 | Pending |
+| BANKROLL-02 | Phase 3 | Pending |
+| BANKROLL-03 | Phase 3 | Pending |
+| BANKROLL-04 | Phase 3 | Pending |
+| METRICS-01 | Phase 4 | Pending |
+| METRICS-02 | Phase 4 | Pending |
+| METRICS-03 | Phase 4 | Pending |

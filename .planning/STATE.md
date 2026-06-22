@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Slips & Props Tracking
 status: planning
-last_updated: "2026-06-22T06:40:08.747Z"
-last_activity: 2026-06-22
+last_updated: "2026-06-21T00:00:00.000Z"
+last_activity: 2026-06-21
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,23 +17,24 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-14)
+See: .planning/PROJECT.md (updated 2026-06-22)
 
-**Core value:** Every cron job and pipeline runs correctly on schedule — no timeouts, no task-failure alerts — so the operator can stop babysitting it and move on to model work.
-**Current focus:** Milestone complete
+**Core value:** Make the bankroll reflect actual DFS slips, track and grade both slips and props, and feed realized outcomes back into selection — so the operator can tell whether the model is improving.
+**Current focus:** Phase 1 — Trustworthy Results
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-06-22 — Milestone v2.0 started
+Phase: 1 of 4 (Trustworthy Results)
+Plan: — of — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-06-21 — v2.0 roadmap created; 4 phases mapped to 14 requirements
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
-
-- Total plans completed: 17
+- Total plans completed: 0 (v2.0); 17 (v1.0 historical)
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -41,28 +42,16 @@ Last activity: 2026-06-22 — Milestone v2.0 started
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 3 | - | - |
-| 02 | 5 | - | - |
-| 03 | 3 | - | - |
-| 04 | 3 | - | - |
-| 05 | 3 | - | - |
+| 1. Trustworthy Results | TBD | - | - |
+| 2. Slip Reconstruction and Grading | TBD | - | - |
+| 3. Slips-Only Bankroll | TBD | - | - |
+| 4. Dual Metrics and Feedback | TBD | - | - |
 
 **Recent Trend:**
-
 - Last 5 plans: —
 - Trend: —
 
 *Updated after each plan completion*
-| Phase 01-diagnosis P02 | 90 | 2 tasks | 1 files |
-| Phase 02 P01 | 25 | 3 tasks | 1 files |
-| Phase 02 P02 | 15 | 2 tasks | 2 files |
-| Phase 02 P04 | 600 | 3 tasks | 3 files |
-| Phase 02 P05 | 25 | 1 tasks | 1 files |
-| Phase 03-resilience P03 | 30 | 3 tasks | 2 files |
-| Phase 04-observability P01 | 235 | 3 tasks | 2 files |
-| Phase 04-observability P03 | 191 | 3 tasks | 2 files |
-| Phase 05-ci P02 | 300 | 2 tasks | 2 files |
-| Phase 05-ci P03 | 57 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -71,14 +60,11 @@ Last activity: 2026-06-22 — Milestone v2.0 started
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Roadmap: Diagnosis precedes fixes — exact broken-pipe cause not yet pinned; do not assume `log()`/`obsidian_sync()` without evidence
-- Roadmap: Defect removal (DEF-01/DEF-02) bundled with reliability fixes (Phase 2) because both are preconditions for a clean end-to-end pass of all 11 tasks
-- Roadmap: Resilience (Phase 3) follows fixes so regression tests (RES-04) cover the actual fix code paths
-- Constraint: No gate logic, pick output, or workbook schema changes anywhere in this milestone
-- DIAG-01 confirmed: bare print("JSON_RESULT=...") at sports_system_runner.py:5634/5640 in main() raises BrokenPipeError when Hermes closes stdout mid-dispatch_alerts fanout — HIGH confidence (repro_broken_pipe.py PASS + 34+ run-log occurrences)
-- DIAG-02 confirmed: send_telegram() retry loop is dominant timeout contributor (24,923s max); stacked subprocess timeouts (Lead #2, 1,500s ceiling) RULED OUT (7,697s observed exceeds ceiling 5x); obsidian_sync per-log-line confirmed as compounding contributor
-- Phase 1 complete: all 3 ROADMAP success criteria satisfied; DIAGNOSIS.md authored; DIAG-01 + DIAG-02 addressed
-- OBS-03 complete: REPEATED_FAILURE_THRESHOLD (default 2, env-configurable) + trailing_failure_streak() reading run_log.jsonl tail; 🔁 REPEATED FAILURE alert fires additively in both failure branches of main() once consecutive failures reach the threshold
+- Roadmap: Strict P1→P2→P3→P4 dependency chain — slips (P2) cannot grade without trustworthy results (P1); bankroll rebase (P3) requires graded slips (P2); feedback loop (P4) requires the rebased bankroll signal (P3)
+- Roadmap: Phase 1 scope fully captured in approved spec `docs/superpowers/specs/2026-06-21-trustworthy-results-design.md` — two layers (in-process name/stat hardening then flagged firecrawl subprocess for residue), provenance columns, money-safe June 8–21 backfill
+- Constraint: Additive-only workbook schema changes; no gate logic or pick verdict changes; tasks must stay under 660s cron budget (cron kill at 720s)
+- Constraint: `ENABLE_FIRECRAWL_RESULT_FALLBACK` default off — Layer-1 alone carries the milestone; Layer-2 is residue-only and flag-gated
+- Hard gate for Phase 1 done: ≥ 80% of non-Fantasy-Score MANUAL REVIEW prop rows resolve on the June 8 dry-run
 
 ### Pending Todos
 
@@ -86,8 +72,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- CONCERNS.md flags that `python3` is Python 3.14 alpha — a Python upgrade could silently break the runtime; treat interpreter path as a risk during Phase 1 timing analysis
-- No `requirements.txt` or lockfile exists; CI (Phase 5) must pin or document the exact interpreter and deps to be reproducible
+- ESPN summary availability for older dates (June 8–21) is unverified and may cap how many of the 86 MANUAL REVIEW rows are re-gradable — measure in dry-run, do not assume
+- Keyless firecrawl end-to-end contract (keyless markdown scrape + parser) must be confirmed via the live smoke test before the flag is enabled in cron; until confirmed, flag stays off
+- Fantasy Score formula (46-row residue): PrizePicks/Underdog weighting is unencoded; a subtly-wrong formula would mis-grade real money — scoped only to scraped fallback, not in-process derivation
+- Side recovery for backfill: 86 MANUAL REVIEW rows have null Over/Under; re-parsed from Pick Ref and abstains on ambiguity — measure how many are recoverable in dry-run
 
 ### Quick Tasks Completed
 
@@ -99,22 +87,16 @@ None yet.
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Observability | OBS-04: Historical run analytics / dashboard | v2 deferred | Requirements |
-| Observability | OBS-05: Per-stage timing breakdown for trend analysis | v2 deferred | Requirements |
-| Human UAT | Phase 04: live run_log.jsonl accumulation · 🩺 health Telegram alert · 🔁 repeated-failure alert (3 scenarios) | Acknowledged | v1.0 close (2026-06-22) |
-| Human UAT | Phase 05: real `git push` fires pre-push gate · `--no-verify` escape hatch (2 scenarios) | Acknowledged | v1.0 close (2026-06-22) |
-| Verification | Phase 04 & 05 VERIFICATION.md status=human_needed (all must-haves verified; live-env confirmation only) | Acknowledged | v1.0 close (2026-06-22) |
-| Nyquist | Validation incomplete: P1/P3 partial (draft, nyquist_compliant:false), P2/P4/P5 missing VALIDATION.md — run /gsd:validate-phase per phase | Acknowledged | v1.0 close (2026-06-22) |
-| Hardening | Phase 05 review WR-01…05 (notably WR-02: no pytest subprocess timeout in CI gate) — non-critical | Acknowledged | v1.0 close (2026-06-22) |
-
-_5 items acknowledged and deferred at milestone close on 2026-06-22 (milestone audit status: tech_debt, no blockers). The flagged quick task 260621-ohh is complete (commit 2f245f5) — a SUMMARY-filename false positive, not a real gap._
+| Human UAT | Phase 04: live run_log.jsonl accumulation · 🩺 health Telegram alert · 🔁 repeated-failure alert | Acknowledged | v1.0 close (2026-06-22) |
+| Human UAT | Phase 05: real `git push` fires pre-push gate · `--no-verify` escape hatch | Acknowledged | v1.0 close (2026-06-22) |
+| Verification | Phase 04 & 05 VERIFICATION.md status=human_needed (live-env confirmation only) | Acknowledged | v1.0 close (2026-06-22) |
+| Nyquist | Validation incomplete: P1/P3 partial, P2/P4/P5 missing VALIDATION.md | Acknowledged | v1.0 close (2026-06-22) |
+| Hardening | Phase 05 review WR-01…05 (WR-02: no pytest subprocess timeout in CI gate) — non-critical | Acknowledged | v1.0 close (2026-06-22) |
+| Future req | Persist Player/Stat/Line/Side as real structured columns (removes string-parsing fragility) | Deferred past P1 | REQUIREMENTS.md |
+| Future req | Exact PrizePicks/Underdog Fantasy Score payout formulas (46-row residue) as first-class derivation | Higher-risk, separate workstream | REQUIREMENTS.md |
 
 ## Session Continuity
 
-Last session: 2026-06-21T19:20:11.296Z
-Stopped at: Phase 5 context gathered
+Last session: 2026-06-21
+Stopped at: v2.0 roadmap created — 4 phases, 14 requirements mapped, ready to plan Phase 1
 Resume file: None
-
-## Operator Next Steps
-
-- Start the next milestone with /gsd-new-milestone
