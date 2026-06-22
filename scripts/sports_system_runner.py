@@ -4162,35 +4162,312 @@ def espn_player_stats(sport: str, date: str, home: str | None, away: str | None)
     return stats
 
 
-def stat_value_for_prop(player_stats: dict[str, dict[str, float]], player: str, stat: str) -> float | None:
-    row = player_stats.get(str(player or "").lower())
-    if not row:
+def _innings_to_outs_grading(v: Any) -> float | None:
+    """Parse a dotted-decimal innings string/float to total outs.
+
+    ESPN stores innings pitched as "X.Y" where X = full innings and Y ∈ {0,1,2}
+    representing 0, 1, or 2 additional outs (NOT tenths).
+    Examples: 6.2 → 20 outs, 1.1 → 4 outs, 5.0 → 15 outs.
+    Mirrors build_hit_rate_db.py:165 but operates on the pre-converted float
+    that espn_player_stats_by_event stores (e.g. 6.2 float, not string "6.2").
+    """
+    if v in (None, "", "-"):
         return None
-    s = str(stat or "").lower()
-    points = row.get("points") or row.get("pts") or 0
-    rebounds = row.get("rebounds") or row.get("reb") or 0
-    assists = row.get("assists") or row.get("ast") or 0
-    if s in ("points", "pts"):
-        return points
-    if "3-pt" in s or "3pt" in s or "three" in s:
-        return row.get("3-pt made") or row.get("3pt")
-    if s in ("rebounds", "rebs"):
-        return rebounds
-    if s in ("assists", "asts"):
-        return assists
-    if "pts+rebs+asts" in s or "pra" in s:
-        return points + rebounds + assists
-    if "pts+rebs" in s:
-        return points + rebounds
-    if "pts+asts" in s:
-        return points + assists
-    if "rebs+asts" in s:
-        return rebounds + assists
-    # MLB and other stats: try exact-ish key match.
-    for key, value in row.items():
-        if s == key or s in key or key in s:
-            return value
-    return None
+    s = str(v)
+    try:
+        if "." in s:
+            whole, frac = s.split(".", 1)
+            return float(int(whole) * 3 + int(frac[:1]))
+        return float(int(s) * 3)
+    except Exception:
+        return None
+
+
+def _canon_stat(stat: str) -> str:
+    """Canonical stat key: lowercase, collapse + variants and spaces."""
+    s = str(stat or "").strip().lower()
+    # Normalise space-padded "+" (e.g. "Pts + Rebs" -> "pts+rebs")
+    import re as _re
+    s = _re.sub(r"\s*\+\s*", "+", s)
+    # Collapse internal whitespace
+    s = " ".join(s.split())
+    return s
+
+
+def stat_value_for_prop(
+    player_stats: dict[str, Any], player: str, stat: str
+) -> tuple[float | None, str, float]:
+    """Resolve a prop player+stat to a box-score value with provenance.
+
+    Returns (value, source, confidence):
+      - exact-name + DIRECT key  → (value, "api", 1.0)
+      - DERIVED formula           → (value, "api", 0.8)
+      - fuzzy name (tiers 2–4) on DIRECT/DERIVED stat → (value, "api", 0.6)
+      - NOT-DERIVABLE or unresolved → (None, "manual", 0.0)
+
+    The substring fallback previously at :4064-4066 is DELETED. Every stat resolves
+    to exactly one enumerated disposition from the explicit table below. Stats not
+    in the table (period-scoped, combo, fantasy-score specials) return NOT-DERIVABLE
+    and never fall through to a wrong full-game stat.
+    """
+    _MANUAL = (None, "manual", 0.0)
+
+    # --- Name resolution via name_match (4-tier, abstain on ambiguity) ---
+    prop_lower = str(player or "").lower()
+    exact_hit = prop_lower in player_stats
+    matched_key = name_match(str(player or ""), player_stats.keys())
+    if matched_key is None:
+        return _MANUAL
+    row = player_stats.get(matched_key)
+    if not row:
+        return _MANUAL
+    # Confidence tier determined by name-match quality.
+    # Exact byte-match (Tier 1) → 1.0; fuzzy (Tiers 2–4) → 0.6.
+    name_conf_exact = exact_hit  # True iff Tier 1 fired
+
+    s = _canon_stat(stat)
+
+    # ------------------------------------------------------------------
+    # Determine whether this is an MLB stat requiring batting/pitching
+    # namespace selection.
+    # MLB player rows have sub-dicts: row["batting"] and/or row["pitching"].
+    # NBA rows are flat dicts with no sub-dicts.
+    # ------------------------------------------------------------------
+    is_mlb = "batting" in row or "pitching" in row
+    bat: dict[str, Any] = row.get("batting", {}) if is_mlb else {}
+    pit: dict[str, Any] = row.get("pitching", {}) if is_mlb else {}
+    flat: dict[str, Any] = row if not is_mlb else {}
+
+    # Helper: return DIRECT result with appropriate name confidence applied.
+    def _direct(value: float | None) -> tuple[float | None, str, float]:
+        if value is None:
+            return _MANUAL
+        conf = 1.0 if name_conf_exact else 0.6
+        return (float(value), "api", conf)
+
+    # Helper: return DERIVED result with appropriate name confidence applied.
+    def _derived(value: float | None) -> tuple[float | None, str, float]:
+        if value is None:
+            return _MANUAL
+        conf = 0.8 if name_conf_exact else 0.6
+        return (float(value), "api", conf)
+
+    # ================================================================
+    # NOT-DERIVABLE disposition set — checked FIRST, before any lookup.
+    # These stats require play-by-play scoping, composite platform weights,
+    # or two-player data — none of which the summary box provides.
+    # Returning MANUAL (not a substring guess) is the correct safe path.
+    # ================================================================
+    _NOT_DERIVABLE = {
+        # NBA period-scoped (half/quarter)
+        "1h points", "1h rebounds", "1h assists",
+        "1h 3-pointers made", "1h pts+rebs+asts", "1h pts + rebs + asts",
+        "1q points", "1q rebounds", "1q assists",
+        "1q 3-pointers made", "1q pts+rebs+asts", "1q pts + rebs + asts",
+        # NBA special/combo
+        "double-double", "dunks",
+        "fantasy score", "fantasy points",
+        "first 3-point attempt", "first fg attempt", "first to 10+ points",
+        "game high scorer", "team high scorer",
+        "3+ points scored each quarter",
+        "points - 1st 3 minutes", "assists - 1st 3 minutes", "rebounds - 1st 3 minutes",
+        "points in first 5 min.", "pts+reb+ast in first 5 min.",
+        # NBA attempted counts (raw "X-Y" string discarded by the runner's split logic)
+        "fg attempted", "3-pt attempted", "3s attempted",
+        "ft attempted", "free throws attempted",
+        "two pointers attempted",
+        # MLB inning-scoped (require play-by-play, never full-game key)
+        "1st inning runs allowed", "1st inning walks allowed",
+        "1st inn. runs allowed", "1st inn. hits allowed",
+        "1st inn. strikeouts", "1st inn. pitch count", "1st inn. batters faced",
+        "1-3 inn. runs allowed",
+        # MLB fantasy / platform-specific
+        "hitter fantasy score", "pitcher fantasy score",
+        # MLB two-player combo
+        "pitcher strikeouts (combo)",
+        # MLB stats not in box (play-by-play only)
+        "stolen bases", "plate appearances",
+    }
+
+    if s in _NOT_DERIVABLE:
+        return _MANUAL
+
+    # Also reject any stat containing "(combo)" suffix — two-player, unresolvable.
+    if s.endswith("(combo)"):
+        return _MANUAL
+
+    # ================================================================
+    # NBA DIRECT keys (flat row; confirmed from fixture oracle)
+    # ================================================================
+    if not is_mlb:
+        # --- NBA DIRECT ---
+        if s in ("points", "pts"):
+            return _direct(flat.get("points") or flat.get("pts"))
+
+        if s in ("rebounds", "rebs"):
+            return _direct(flat.get("rebounds") or flat.get("reb"))
+
+        if s in ("assists", "asts"):
+            return _direct(flat.get("assists") or flat.get("ast"))
+
+        if s == "steals":
+            return _direct(flat.get("steals"))
+
+        if s in ("blocked shots", "blocks"):
+            return _direct(flat.get("blocks"))
+
+        if s == "turnovers":
+            return _direct(flat.get("turnovers"))
+
+        if s == "personal fouls":
+            return _direct(flat.get("fouls"))
+
+        if s == "offensive rebounds":
+            return _direct(flat.get("offensiverebounds"))
+
+        if s == "defensive rebounds":
+            return _direct(flat.get("defensiverebounds"))
+
+        # --- NBA DERIVED ---
+        # 3-PT Made (key stored by alias as "3-pt made")
+        if s in ("3-pt made", "3-pointers made", "3-pt made", "3pt made"):
+            return _derived(flat.get("3-pt made") or flat.get("3pt"))
+
+        # FG Made (fieldgoalsmade-fieldgoalsattempted stores the MADE count)
+        if s in ("fg made",):
+            v = flat.get("fieldgoalsmade-fieldgoalsattempted")
+            return _derived(v)
+
+        # FT Made (freethrowsmade-freethrowsattempted stores the MADE count)
+        if s in ("ft made", "free throws made"):
+            v = flat.get("freethrowsmade-freethrowsattempted")
+            return _derived(v)
+
+        # Two Pointers Made = FG Made - 3PT Made
+        if s in ("two pointers made",):
+            fg = flat.get("fieldgoalsmade-fieldgoalsattempted")
+            tpt = flat.get("3-pt made") or flat.get("threepointfieldgoalsmade-threepointfieldgoalsattempted")
+            if fg is not None and tpt is not None:
+                return _derived(float(fg) - float(tpt))
+            return _MANUAL
+
+        # Blks+Stls combos
+        if s in ("blks+stls", "blocks+steals", "blks + stls", "blocks + steals"):
+            b = flat.get("blocks")
+            st = flat.get("steals")
+            if b is not None and st is not None:
+                return _derived(float(b) + float(st))
+            return _MANUAL
+
+        # Points+Rebounds+Assists combos (PRA)
+        points = flat.get("points") or flat.get("pts") or 0.0
+        rebounds = flat.get("rebounds") or flat.get("reb") or 0.0
+        assists = flat.get("assists") or flat.get("ast") or 0.0
+        if s in ("pts+rebs+asts", "pra", "pts + rebs + asts",
+                 "points+rebounds+assists", "points + rebounds + assists"):
+            return _derived(float(points) + float(rebounds) + float(assists))
+        if s in ("pts+rebs", "pts + rebs", "points+rebounds", "points + rebounds"):
+            return _derived(float(points) + float(rebounds))
+        if s in ("pts+asts", "pts + asts", "points+assists", "points + assists"):
+            return _derived(float(points) + float(assists))
+        if s in ("rebs+asts", "rebs + asts", "rebounds+assists", "rebounds + assists"):
+            return _derived(float(rebounds) + float(assists))
+
+        # Unrecognised NBA stat — NOT-DERIVABLE (do NOT substring-fall-through)
+        return _MANUAL
+
+    # ================================================================
+    # MLB DIRECT keys (batting or pitching namespace, from oracle ledger)
+    # ================================================================
+
+    # Hitter stats (batting group)
+    if s == "hits":
+        return _direct(bat.get("hits"))
+
+    if s == "runs":
+        return _direct(bat.get("runs"))
+
+    if s == "rbis":
+        return _direct(bat.get("rbis"))
+
+    if s == "home runs":
+        return _direct(bat.get("homeruns"))
+
+    if s in ("walks", "batter walks"):
+        return _direct(bat.get("walks"))
+
+    if s in ("hitter strikeouts", "batter strikeouts", "strikeouts"):
+        return _direct(bat.get("strikeouts"))
+
+    # Pitcher stats (pitching group)
+    if s == "hits allowed":
+        return _direct(pit.get("hits"))
+
+    if s == "earned runs allowed":
+        return _direct(pit.get("earnedruns"))
+
+    if s == "walks allowed":
+        return _direct(pit.get("walks"))
+
+    if s == "pitcher strikeouts":
+        return _direct(pit.get("strikeouts"))
+
+    if s == "pitches thrown":
+        return _direct(pit.get("pitches"))
+
+    # ================================================================
+    # MLB DERIVED keys
+    # ================================================================
+
+    # Total Bases: 1×singles + 2×doubles + 3×triples + 4×home-runs (from _hit_counts)
+    if s == "total bases":
+        hc = bat.get("_hit_counts", {})
+        if not isinstance(hc, dict) or (not hc and bat.get("hits") is None):
+            return _MANUAL
+        singles = hc.get("single", 0) or 0
+        doubles = hc.get("double", 0) or 0
+        triples = hc.get("triple", 0) or 0
+        hrs = hc.get("home-run", 0) or 0
+        return _derived(float(singles + 2 * doubles + 3 * triples + 4 * hrs))
+
+    # Singles: from _hit_counts["single"]
+    if s == "singles":
+        hc = bat.get("_hit_counts", {})
+        if not isinstance(hc, dict):
+            return _MANUAL
+        return _derived(float(hc.get("single", 0) or 0))
+
+    # Doubles: from _hit_counts["double"]
+    if s == "doubles":
+        hc = bat.get("_hit_counts", {})
+        if not isinstance(hc, dict):
+            return _MANUAL
+        return _derived(float(hc.get("double", 0) or 0))
+
+    # Triples: from _hit_counts["triple"]
+    if s == "triples":
+        hc = bat.get("_hit_counts", {})
+        if not isinstance(hc, dict):
+            return _MANUAL
+        return _derived(float(hc.get("triple", 0) or 0))
+
+    # Pitching Outs: parse fullinnings.partinnings
+    if s == "pitching outs":
+        raw = pit.get("fullinnings.partinnings")
+        v = _innings_to_outs_grading(raw)
+        return _derived(v)
+
+    # Hits+Runs+RBIs (batting group sum)
+    if s in ("hits+runs+rbis", "hits + runs + rbis"):
+        h = bat.get("hits")
+        r = bat.get("runs")
+        rbi = bat.get("rbis")
+        if h is None or r is None or rbi is None:
+            return _MANUAL
+        return _derived(float(h) + float(r) + float(rbi))
+
+    # Unrecognised MLB stat — NOT-DERIVABLE (do NOT substring-fall-through)
+    return _MANUAL
 
 
 def grade_prop(row: dict[str, Any], player_stats: dict[str, dict[str, float]], game_final: bool) -> tuple[str, float | None, str]:

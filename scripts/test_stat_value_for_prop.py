@@ -212,15 +212,14 @@ class TestNBADerivedStats(unittest.TestCase):
         self.assertEqual(src, "api")
         self.assertEqual(conf, 0.8)
 
-    def test_3pt_attempted_derived(self) -> None:
-        # The NBA row has threepointfieldgoalsmade-threepointfieldgoalsattempted stored
-        # as the split[0] value (made count). Attempted needs the split[1] key.
-        # The disposition table handles this via the raw row key.
+    def test_3pt_attempted_not_derivable(self) -> None:
+        """3-PT Attempted: the runner discards the attempted count (stores only made from 'X-Y' split).
+        The raw 'threepointfieldgoalsmade-threepointfieldgoalsattempted' key stores only made count.
+        Attempted count is gone. NOT-DERIVABLE from the flat dict."""
         val, src, conf = self._call("3-PT Attempted")
-        # Value depends on fixture data; just check source/confidence
-        self.assertIsNotNone(val)
-        self.assertEqual(src, "api")
-        self.assertEqual(conf, 0.8)
+        self.assertIsNone(val)
+        self.assertEqual(src, "manual")
+        self.assertEqual(conf, 0.0)
 
     def test_fg_made_derived(self) -> None:
         val, src, conf = self._call("FG Made")
@@ -228,13 +227,13 @@ class TestNBADerivedStats(unittest.TestCase):
         self.assertEqual(src, "api")
         self.assertEqual(conf, 0.8)
 
-    def test_fg_attempted_derived(self) -> None:
+    def test_fg_attempted_not_derivable(self) -> None:
+        """FG Attempted: the runner splits 'X-Y' and discards the attempted count.
+        fieldgoalsmade-fieldgoalsattempted stores only the made count. NOT-DERIVABLE."""
         val, src, conf = self._call("FG Attempted")
-        # fieldgoalsmade-fieldgoalsattempted is stored as made=12; attempts from the raw key
-        # The test confirms it returns ("api", 0.8) even if value depends on fixture
-        self.assertIsNotNone(val)
-        self.assertEqual(src, "api")
-        self.assertEqual(conf, 0.8)
+        self.assertIsNone(val)
+        self.assertEqual(src, "manual")
+        self.assertEqual(conf, 0.0)
 
     def test_points_plus_assists_alias(self) -> None:
         """Points + Assists (with spaces) should also work."""
@@ -258,6 +257,19 @@ class TestNBADerivedStats(unittest.TestCase):
     def test_pts_rebs_asts_pra_alias(self) -> None:
         val, src, conf = self._call("Pts + Rebs + Asts")
         self.assertEqual(val, 45.0)
+        self.assertEqual(src, "api")
+        self.assertEqual(conf, 0.8)
+
+    def test_ft_made_derived(self) -> None:
+        """FT Made from freethrowsmade-freethrowsattempted split[0]."""
+        val, src, conf = self._call("FT Made")
+        self.assertEqual(val, 2.0)
+        self.assertEqual(src, "api")
+        self.assertEqual(conf, 0.8)
+
+    def test_free_throws_made_alias(self) -> None:
+        val, src, conf = self._call("Free Throws Made")
+        self.assertEqual(val, 2.0)
         self.assertEqual(src, "api")
         self.assertEqual(conf, 0.8)
 
@@ -354,30 +366,19 @@ class TestNBANotDerivable(unittest.TestCase):
     def test_1q_rebounds_not_derivable(self) -> None:
         self._assert_not_derivable("1Q Rebounds")
 
-    def test_two_pointers_made_not_derivable(self) -> None:
-        """Two Pointers Made: FG_made - 3PT_made — but stored split key doesn't support this."""
-        # Spec says DERIVED but our fixture doesn't have the right split storage for attempted.
-        # After implementation: if the disposition table maps it as NOT-DERIVABLE, that's fine.
-        # We check here that it doesn't substring-match to something wrong.
+    def test_two_pointers_made_derived(self) -> None:
+        """Two Pointers Made: FG_made - 3PT_made = 12 - 4 = 8. DERIVED ("api", 0.8)."""
         val, src, conf = stat_value_for_prop(_NBA_PLAYER_STATS, "lebron james", "Two Pointers Made")
-        # Either properly derived or NOT-DERIVABLE — never a wrong substring match
-        if val is not None:
-            # If derivable, must be ("api", 0.8)
-            self.assertEqual(src, "api")
-            self.assertEqual(conf, 0.8)
-        else:
-            # NOT-DERIVABLE path
-            self.assertEqual(src, "manual")
-            self.assertEqual(conf, 0.0)
+        self.assertEqual(val, 8.0)  # FG made(12) - 3PT made(4) = 8
+        self.assertEqual(src, "api")
+        self.assertEqual(conf, 0.8)
 
     def test_two_pointers_attempted_not_derivable(self) -> None:
+        """Two Pointers Attempted: FG_attempted - 3PT_attempted, but attempted counts are discarded."""
         val, src, conf = stat_value_for_prop(_NBA_PLAYER_STATS, "lebron james", "Two Pointers Attempted")
-        if val is not None:
-            self.assertEqual(src, "api")
-            self.assertEqual(conf, 0.8)
-        else:
-            self.assertEqual(src, "manual")
-            self.assertEqual(conf, 0.0)
+        self.assertIsNone(val)
+        self.assertEqual(src, "manual")
+        self.assertEqual(conf, 0.0)
 
 
 class TestMLBDirectStats(unittest.TestCase):
@@ -635,13 +636,17 @@ class TestStatCorpusDispositions(unittest.TestCase):
         "1H 3-Pointers Made", "1H Points", "1H Pts + Rebs + Asts", "1H Rebounds",
         "1Q 3-Pointers Made", "1Q Points", "1Q Pts + Rebs + Asts", "1Q Rebounds",
         "3+ Points Scored Each Quarter",
+        "3-PT Attempted", "3s Attempted",
         "3-PT Made (Combo)", "Assists (Combo)", "Points (Combo)", "Rebounds (Combo)",
         "Assists - 1st 3 Minutes", "Points - 1st 3 Minutes", "Rebounds - 1st 3 Minutes",
         "Double-Double", "Dunks",
         "Fantasy Points", "Fantasy Score",
+        "FG Attempted", "FT Attempted",
         "First 3-Point Attempt", "First FG Attempt", "First to 10+ Points",
+        "Free Throws Attempted",
         "Game High Scorer", "Team High Scorer",
         "Points in First 5 Min.", "Pts+Reb+Ast in First 5 Min.",
+        "Two Pointers Attempted",
     }
 
     NOT_DERIVABLE_MLB = {
