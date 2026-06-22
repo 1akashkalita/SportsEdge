@@ -8,6 +8,18 @@ The Hermes sports-betting automation is an existing, in-use Python system that r
 
 Every cron job and pipeline runs correctly on schedule — no timeouts, no task-failure alerts — so the operator can stop babysitting it and confidently move on to model/accuracy work next.
 
+## Current Milestone: v2.0 Slips & Props Tracking
+
+**Goal:** Make the bankroll reflect actual DFS slips (not individual props), track and grade both slips and props, backfill from inception (2026-06-08), and feed realized outcomes back into selection — so the operator can finally tell whether the model is improving.
+
+**Why now:** v1.0 made the pipeline run reliably; investigation then showed the bankroll has been frozen because grading was broken and ~37% of props never resolved (MANUAL REVIEW), and slips were never recorded at all. Trustworthy measurement must come before any model tuning.
+
+**Target features (strict dependency chain P1→P2→P3→P4):**
+- **P1 — Trustworthy results:** drive the ~37% prop MANUAL-REVIEW rate toward zero via in-process name/stat matching hardening, then a flagged, subprocess-isolated firecrawl keyless scrape for the residue; add `Result Source`/`Result Confidence` provenance; money-safe June 8–21 backfill. *(Spec approved & committed: `docs/superpowers/specs/2026-06-21-trustworthy-results-design.md`.)*
+- **P2 — Slips: reconstruct → grade → record:** wire `build_slips.py` per day, populate the always-empty Slip History sheet (forward + June 8–21 backtest of the model's recommended slips).
+- **P3 — Slips-only bankroll:** rebase bankroll to sum slip Net PnL with confidence-scaled stakes; props become accuracy-only (out of the bankroll).
+- **P4 — Dual metrics + feedback into selection:** report slip ROI + prop hit-rate; feed realized outcomes back into projection/gate tuning.
+
 ## Current State
 
 **Shipped v1.0 — Stability Hardening (2026-06-22):** 5 phases / 17 plans, 16/16 v1 requirements satisfied. The broken-pipe `TASK FAILED` is eliminated, cron timeouts are root-caused and bounded (660s SIGALRM budget under a 720s cron ceiling), and a resilience + observability + CI safety net guards every fix. Milestone audit: `tech_debt` (no blockers). Outstanding before the system is fully "trusted in production": 5 live-environment human-UAT confirmations + optional Nyquist/hardening follow-ups (see STATE.md → Deferred Items). **Next milestone:** model/accuracy work — the explicit "after stability" goal — once the live UAT confirms the hardening on the real cron host. Start with `/gsd-new-milestone`.
@@ -48,8 +60,8 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 
 <!-- Explicit boundaries with reasoning to prevent re-adding. -->
 
-- Model accuracy / projection-quality improvements — the explicit "after" goal; stability comes first
-- New sports or new bet types — not part of stabilization
+- Full projection-model rebuild / new ML training pipeline — v2.0 adds trustworthy measurement and a bounded outcome→selection feedback loop (P4), not a ground-up model rewrite
+- New sports or new bet types — not part of this milestone
 - Broad refactor of the ~5,650-line `sports_system_runner.py` monolith — only stability-threatening defects are in-bounds, not restructuring
 - Migrating off Excel persistence to a database — Excel works today; harden it, don't replace it
 
