@@ -719,5 +719,141 @@ class TestReturnShape(unittest.TestCase):
         self.assertEqual(len(result), 3)
 
 
+# ---------------------------------------------------------------------------
+# REGRESSION: DNP / missing-stat consistency (2026-06-22 backfill regression)
+# ---------------------------------------------------------------------------
+# Symptom: For a player whose row exists but lacks the target stat key (e.g. a
+# DNP with a partial row), _direct returned _MANUAL while _derived combos
+# defaulted missing components to 0 and graded. That caused McBride Points 4.5
+# to become MANUAL REVIEW while Pts+Rebs+Asts 6.5 graded LOSS — inconsistent.
+#
+# Policy (from the fix):
+#   - Key ABSENT from row → both single and combo must abstain (None, "manual", 0.0)
+#   - Key PRESENT with value 0 → grade as 0.0 (genuine zero, e.g. 0-point game)
+# ---------------------------------------------------------------------------
+
+# NBA row that looks like a partial/DNP row: the "points" key is absent.
+_NBA_DNP_ROW: dict = {
+    # "points" is intentionally absent — simulates McBride's missing stat key
+    "rebounds": 1.0,
+    "assists": 1.0,
+    "steals": 0.0,
+    "blocks": 0.0,
+    "turnovers": 0.0,
+    "fouls": 1.0,
+    "offensiverebounds": 0.0,
+    "defensiverebounds": 1.0,
+    "3-pt made": 0.0,
+}
+
+_NBA_DNP_STATS: dict = {"miles mcbride": _NBA_DNP_ROW}
+
+# NBA row where a player legitimately scored 0 points (active, 0-point game).
+_NBA_ZERO_POINTS_ROW: dict = {
+    "points": 0.0,  # Present and explicitly zero
+    "rebounds": 3.0,
+    "assists": 2.0,
+    "steals": 1.0,
+    "blocks": 0.0,
+    "turnovers": 0.0,
+    "fouls": 2.0,
+    "offensiverebounds": 0.0,
+    "defensiverebounds": 3.0,
+    "3-pt made": 0.0,
+}
+
+_NBA_ZERO_STATS: dict = {"active zero": _NBA_ZERO_POINTS_ROW}
+
+
+class TestMissingKeyConsistency(unittest.TestCase):
+    """REGRESSION: absent stat key must make BOTH single and combo abstain.
+
+    Introduced 2026-06-22: McBride Points 4.5 regressed from LOSS → MANUAL REVIEW
+    while Pts+Rebs+Asts 6.5 still graded LOSS (actual 0.0) because the combo
+    used `or 0` defaults for missing components. The fix makes combo and single
+    consistent: if ANY component key is absent, the combo abstains too.
+    """
+
+    def test_single_stat_absent_key_abstains(self) -> None:
+        """Points key absent → single stat must abstain (None, "manual", 0.0)."""
+        val, src, conf = stat_value_for_prop(_NBA_DNP_STATS, "miles mcbride", "Points")
+        self.assertIsNone(val, "Points key absent → must abstain, got {!r}".format(val))
+        self.assertEqual(src, "manual")
+        self.assertEqual(conf, 0.0)
+
+    def test_combo_pra_absent_component_abstains(self) -> None:
+        """Pts+Rebs+Asts combo must abstain when 'points' key is absent.
+
+        The pre-fix bug: combo silently defaulted missing points to 0.0 and
+        graded LOSS. After fix: combo must return (None, "manual", 0.0).
+        """
+        val, src, conf = stat_value_for_prop(_NBA_DNP_STATS, "miles mcbride", "Pts+Rebs+Asts")
+        self.assertIsNone(
+            val,
+            "Pts+Rebs+Asts must abstain when 'points' key is absent, got {!r}".format(val),
+        )
+        self.assertEqual(src, "manual")
+        self.assertEqual(conf, 0.0)
+
+    def test_single_and_combo_consistent_on_absent_key(self) -> None:
+        """Single (Points) and combo (Pts+Rebs+Asts) must both be None when key absent.
+
+        This is the core consistency requirement: the two must agree.
+        """
+        val_single, _, _ = stat_value_for_prop(_NBA_DNP_STATS, "miles mcbride", "Points")
+        val_combo, _, _ = stat_value_for_prop(_NBA_DNP_STATS, "miles mcbride", "Pts+Rebs+Asts")
+        # Both must abstain (None == None is True)
+        both_none = val_single is None and val_combo is None
+        self.assertTrue(
+            both_none,
+            "Single ({!r}) and combo ({!r}) must both abstain when key absent.".format(
+                val_single, val_combo
+            ),
+        )
+
+    def test_pts_rebs_absent_component_abstains(self) -> None:
+        """Pts+Rebs abstains when 'points' key absent."""
+        val, src, conf = stat_value_for_prop(_NBA_DNP_STATS, "miles mcbride", "Pts+Rebs")
+        self.assertIsNone(val)
+        self.assertEqual(src, "manual")
+
+    def test_pts_asts_absent_component_abstains(self) -> None:
+        """Pts+Asts abstains when 'points' key absent."""
+        val, src, conf = stat_value_for_prop(_NBA_DNP_STATS, "miles mcbride", "Pts+Asts")
+        self.assertIsNone(val)
+        self.assertEqual(src, "manual")
+
+    def test_rebs_asts_grades_when_both_present(self) -> None:
+        """Rebs+Asts grades normally when BOTH keys present (even though points is absent)."""
+        val, src, conf = stat_value_for_prop(_NBA_DNP_STATS, "miles mcbride", "Rebs+Asts")
+        self.assertEqual(val, 2.0, "rebounds(1)+assists(1)=2.0 — both present, must grade")
+        self.assertEqual(src, "api")
+        self.assertEqual(conf, 0.8)
+
+    def test_genuine_zero_points_grades_as_zero(self) -> None:
+        """A player with 'points': 0.0 (present, genuine zero) must return 0.0, not abstain.
+
+        This distinguishes a legitimate 0-point game from a missing stat.
+        An Over 0.5 Points bet on this player is a LOSS, not MANUAL REVIEW.
+        """
+        val, src, conf = stat_value_for_prop(_NBA_ZERO_STATS, "active zero", "Points")
+        self.assertEqual(val, 0.0, "Genuine 0-point game must grade as 0.0, not abstain")
+        self.assertEqual(src, "api")
+        self.assertIn(conf, (1.0, 0.6))  # Tier 1 exact → 1.0; fuzzy → 0.6
+
+    def test_genuine_zero_pra_grades_when_all_keys_present(self) -> None:
+        """PRA grades as 0+3+2=5.0 when ALL component keys present, even if points=0."""
+        val, src, conf = stat_value_for_prop(_NBA_ZERO_STATS, "active zero", "Pts+Rebs+Asts")
+        self.assertEqual(val, 5.0, "0pts + 3reb + 2ast = 5.0 — all keys present")
+        self.assertEqual(src, "api")
+        self.assertEqual(conf, 0.8)
+
+    def test_genuine_zero_3pt_grades_as_zero(self) -> None:
+        """3-pt made: 0.0 (present) must grade as 0.0, not abstain."""
+        val, src, conf = stat_value_for_prop(_NBA_DNP_STATS, "miles mcbride", "3-PT Made")
+        self.assertEqual(val, 0.0, "3-pt made = 0.0 (present) must grade as 0.0")
+        self.assertEqual(src, "api")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

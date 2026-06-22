@@ -4425,15 +4425,30 @@ def stat_value_for_prop(
     # NBA DIRECT keys (flat row; confirmed from fixture oracle)
     # ================================================================
     if not is_mlb:
+        # Sentinel for absent-key detection in flat dict.
+        # Using object() so we can distinguish key-absent from key-present-but-zero.
+        _ABSENT = object()
+
+        def _flat_get(*keys: str) -> float | None:
+            """Return the value of the first key that is PRESENT in flat, or None
+            if ALL keys are absent. A present value of 0 is returned as 0.0 (not
+            treated as missing). This prevents genuine zero stats (e.g. 0 points
+            from an active player) from being misclassified as absent."""
+            for k in keys:
+                v = flat.get(k, _ABSENT)
+                if v is not _ABSENT:
+                    return float(v) if v is not None else None
+            return None  # all keys absent
+
         # --- NBA DIRECT ---
         if s in ("points", "pts"):
-            return _direct(flat.get("points") or flat.get("pts"))
+            return _direct(_flat_get("points", "pts"))
 
         if s in ("rebounds", "rebs"):
-            return _direct(flat.get("rebounds") or flat.get("reb"))
+            return _direct(_flat_get("rebounds", "reb"))
 
         if s in ("assists", "asts"):
-            return _direct(flat.get("assists") or flat.get("ast"))
+            return _direct(_flat_get("assists", "ast"))
 
         if s == "steals":
             return _direct(flat.get("steals"))
@@ -4456,7 +4471,7 @@ def stat_value_for_prop(
         # --- NBA DERIVED ---
         # 3-PT Made (key stored by alias as "3-pt made")
         if s in ("3-pt made", "3-pointers made", "3-pt made", "3pt made"):
-            return _derived(flat.get("3-pt made") or flat.get("3pt"))
+            return _derived(_flat_get("3-pt made", "3pt"))
 
         # FG Made (fieldgoalsmade-fieldgoalsattempted stores the MADE count)
         if s in ("fg made",):
@@ -4484,18 +4499,31 @@ def stat_value_for_prop(
                 return _derived(float(b) + float(st))
             return _MANUAL
 
-        # Points+Rebounds+Assists combos (PRA)
-        points = flat.get("points") or flat.get("pts") or 0.0
-        rebounds = flat.get("rebounds") or flat.get("reb") or 0.0
-        assists = flat.get("assists") or flat.get("ast") or 0.0
+        # Points+Rebounds+Assists combos (PRA).
+        # Each component is resolved with absent-key awareness: if the key is
+        # absent from the row (DNP or missing stat), the entire combo abstains
+        # (MANUAL REVIEW) so that combos and singles are graded consistently.
+        # A genuine 0 (e.g. 0 points from an active player) is treated as 0.0
+        # and DOES count toward the sum — it must not cause a spurious abstain.
+        points = _flat_get("points", "pts")
+        rebounds = _flat_get("rebounds", "reb")
+        assists = _flat_get("assists", "ast")
         if s in ("pts+rebs+asts", "pra", "pts + rebs + asts",
                  "points+rebounds+assists", "points + rebounds + assists"):
+            if points is None or rebounds is None or assists is None:
+                return _MANUAL
             return _derived(float(points) + float(rebounds) + float(assists))
         if s in ("pts+rebs", "pts + rebs", "points+rebounds", "points + rebounds"):
+            if points is None or rebounds is None:
+                return _MANUAL
             return _derived(float(points) + float(rebounds))
         if s in ("pts+asts", "pts + asts", "points+assists", "points + assists"):
+            if points is None or assists is None:
+                return _MANUAL
             return _derived(float(points) + float(assists))
         if s in ("rebs+asts", "rebs + asts", "rebounds+assists", "rebounds + assists"):
+            if rebounds is None or assists is None:
+                return _MANUAL
             return _derived(float(rebounds) + float(assists))
 
         # Unrecognised NBA stat — NOT-DERIVABLE (do NOT substring-fall-through)
