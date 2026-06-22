@@ -44,7 +44,14 @@ Audit: [milestones/v1.0-MILESTONE-AUDIT.md](./milestones/v1.0-MILESTONE-AUDIT.md
   3. Re-grading a date with previously MANUAL REVIEW or PENDING rows overwrites them in place with terminal grades; rows already settled WIN/LOSS/PUSH/VOID (in any casing) are untouched, and no duplicate Results or Pick History rows appear
   4. A parlay is never mis-graded against a partial leg set: it abstains (stays at prior result) when any constituent leg is not yet terminal
   5. The firecrawl fallback (flag `ENABLE_FIRECRAWL_RESULT_FALLBACK`, default off) degrades to MANUAL REVIEW on any failure, timeout, missing binary, offline, or 429 — grading never crashes and every daily run stays under the 660s cron budget
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+- [ ] 01-1-PLAN.md — Component 0: ESPN summary fixtures + stat_corpus oracle (testdata only)
+- [ ] 01-2-PLAN.md — name_match + _canonical_name; batting/pitching namespace split + hit-type counts
+- [ ] 01-3-PLAN.md — stat_value_for_prop disposition table (3-tuple) + provenance columns end-to-end
+- [ ] 01-4-PLAN.md — value-aware TERMINAL_RESULTS guard + parlay full-leg-set fix + side re-parser
+- [ ] 01-5-PLAN.md — Layer 2: verify_results.py keyless firecrawl + resolve_missing_stat (flag default off)
+- [ ] 01-6-PLAN.md — June 8 ≥80% dry-run gate + June 8–21 backfill execution (human-verified)
 
 ### Phase 2: Slip Reconstruction and Grading
 **Goal**: The Slip History sheet is populated — the model's recommended slips are reconstructed per day, graded against trustworthy results from Phase 1, and backfilled across June 8–21 as a verifiable backtest
@@ -87,7 +94,7 @@ Audit: [milestones/v1.0-MILESTONE-AUDIT.md](./milestones/v1.0-MILESTONE-AUDIT.md
 | 3. Resilience | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 4. Observability | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
-| 1. Trustworthy Results | v2.0 | 0/TBD | Not started | - |
+| 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
 | 2. Slip Reconstruction and Grading | v2.0 | 0/TBD | Not started | - |
 | 3. Slips-Only Bankroll | v2.0 | 0/TBD | Not started | - |
 | 4. Dual Metrics and Feedback | v2.0 | 0/TBD | Not started | - |
