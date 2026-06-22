@@ -5442,6 +5442,19 @@ def injury_monitor(sport: str) -> dict[str, Any]:
 
 
 def espn_player_stats_by_event(sport: str, event_id: str) -> dict[str, dict[str, float]]:
+    """Return per-player box-score stats from the ESPN CDN summary endpoint.
+
+    For MLB: each player row is a dict with optional "batting" and/or "pitching"
+    sub-dicts keyed by group type, so shared labels (hits, runs, walks, strikeouts,
+    homeRuns, pitches) do not clobber across groups.  A "batting" sub-dict also
+    carries a "_hit_counts" key with Single/Double/Triple/Home-Run counts derived
+    from the gamepackageJSON.plays[] array.
+
+    For NBA (single group, group type is None): the row remains a flat dict with
+    the same keys and aliases as before this change (byte-identical behaviour).
+    The FG/3PT/FT split-on-"-" logic and alias_pairs are preserved verbatim so
+    NBA grading paths continue to work unchanged.
+    """
     if not event_id:
         return {}
     _group, _league, cdn = espn_sport_parts(sport)
@@ -5449,38 +5462,101 @@ def espn_player_stats_by_event(sport: str, event_id: str) -> dict[str, dict[str,
         data = espn_json(f"https://cdn.espn.com/core/{cdn}/game", {"xhr": "1", "gameId": event_id})
     except Exception:
         return {}
-    box = data.get("gamepackageJSON", {}).get("boxscore", {}) or {}
+    gpj = data.get("gamepackageJSON", {}) or {}
+    box = gpj.get("boxscore", {}) or {}
+
+    # --- alias_pairs used for both NBA (flat) and MLB (sub-dict) ---
+    alias_pairs: dict[str, list[str]] = {
+        "points": ["points", "pts"], "rebounds": ["rebounds", "reb"], "assists": ["assists", "ast"],
+        "3-pt made": ["threepointfieldgoalsmade-threepointfieldgoalsattempted", "3pt"],
+        "hits": ["hits", "h"], "runs": ["runs", "r"], "rbis": ["rbis", "rbi"], "home runs": ["homeruns", "hr"],
+        "strikeouts": ["strikeouts", "k"], "total bases": ["totalbases", "tb"],
+    }
+
     stats: dict[str, dict[str, float]] = {}
+    # athlete_id -> lowercased display name (for MLB plays lookup)
+    _id_to_name: dict[str, str] = {}
+
     for team in box.get("players", []) or []:
         for group_data in team.get("statistics", []) or []:
             labels = group_data.get("keys") or group_data.get("names") or group_data.get("labels") or []
+            # Group identity: "batting" or "pitching" for MLB; None for NBA.
+            group_type: str | None = group_data.get("type")
+            is_mlb_group = group_type in ("batting", "pitching")
+
             for athlete in group_data.get("athletes", []) or []:
                 a = athlete.get("athlete", {}) or {}
                 name = a.get("displayName") or a.get("shortName")
                 if not name:
                     continue
+                name_lower = str(name).lower()
+                athlete_id = str(a.get("id", ""))
+                if athlete_id:
+                    _id_to_name[athlete_id] = name_lower
+
                 values = athlete.get("stats") or []
-                row = stats.setdefault(str(name).lower(), {})
-                for label, value in zip(labels, values):
-                    label_l = str(label).lower()
-                    raw = value
-                    if isinstance(raw, str) and "-" in raw and any(x in label_l for x in ["fieldgoals", "threepoint", "freethrows", "fg", "3pt", "ft"]):
-                        raw = raw.split("-", 1)[0]
-                    num = to_float(raw)
-                    if num is not None:
-                        row[label_l] = num
-                # Alias names across NBA/MLB stat labels.
-                alias_pairs = {
-                    "points": ["points", "pts"], "rebounds": ["rebounds", "reb"], "assists": ["assists", "ast"],
-                    "3-pt made": ["threepointfieldgoalsmade-threepointfieldgoalsattempted", "3pt"],
-                    "hits": ["hits", "h"], "runs": ["runs", "r"], "rbis": ["rbis", "rbi"], "home runs": ["homeruns", "hr"],
-                    "strikeouts": ["strikeouts", "k"], "total bases": ["totalbases", "tb"],
-                }
-                for canon, keys in alias_pairs.items():
-                    for k in keys:
-                        if k in row:
-                            row[canon] = row[k]
-                            break
+
+                if is_mlb_group:
+                    # --- MLB path: write into a named sub-dict to avoid clobbering ---
+                    player_row = stats.setdefault(name_lower, {})
+                    group_sub: dict[str, float] = player_row.setdefault(str(group_type), {})
+                    for label, value in zip(labels, values):
+                        label_l = str(label).lower()
+                        num = to_float(value)
+                        if num is not None:
+                            group_sub[label_l] = num
+                    # Apply MLB aliases within the sub-dict
+                    for canon, alias_keys in alias_pairs.items():
+                        for k in alias_keys:
+                            if k in group_sub:
+                                group_sub[canon] = group_sub[k]
+                                break
+                else:
+                    # --- NBA path: keep existing flat behaviour VERBATIM ---
+                    row = stats.setdefault(name_lower, {})
+                    for label, value in zip(labels, values):
+                        label_l = str(label).lower()
+                        raw = value
+                        if isinstance(raw, str) and "-" in raw and any(x in label_l for x in ["fieldgoals", "threepoint", "freethrows", "fg", "3pt", "ft"]):
+                            raw = raw.split("-", 1)[0]
+                        num = to_float(raw)
+                        if num is not None:
+                            row[label_l] = num
+                    # Alias names across NBA/MLB stat labels.
+                    for canon, alias_keys in alias_pairs.items():
+                        for k in alias_keys:
+                            if k in row:
+                                row[canon] = row[k]
+                                break
+
+    # --- Per-player hit-type counts from plays[] (MLB only) ---
+    # Each play has type.type in {"single","double","triple","home-run"} for hit events.
+    # The batter participant has type=="batter" and athlete.id (ESPN numeric id).
+    # We attach counts as "_hit_counts" inside the player's "batting" sub-dict so
+    # plan 01-3 can derive Total Bases and Singles without a scrape.
+    plays = gpj.get("plays", []) or []
+    if plays and _id_to_name:
+        _hit_type_set = {"single", "double", "triple", "home-run"}
+        # Accumulate counts per athlete id
+        _hit_counts_by_id: dict[str, dict[str, int]] = {}
+        for play in plays:
+            play_type = (play.get("type") or {}).get("type", "")
+            if play_type not in _hit_type_set:
+                continue
+            for participant in play.get("participants", []) or []:
+                if participant.get("type") == "batter":
+                    pid = str((participant.get("athlete") or {}).get("id", ""))
+                    if pid:
+                        bucket = _hit_counts_by_id.setdefault(pid, {})
+                        bucket[play_type] = bucket.get(play_type, 0) + 1
+        # Attach _hit_counts to each batter's batting sub-dict
+        for pid, hc in _hit_counts_by_id.items():
+            pname = _id_to_name.get(pid)
+            if pname and pname in stats:
+                bat_sub = stats[pname].get("batting")
+                if bat_sub is not None:
+                    bat_sub["_hit_counts"] = hc  # type: ignore[assignment]
+
     return stats
 
 
