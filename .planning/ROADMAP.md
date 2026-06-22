@@ -28,7 +28,7 @@ Audit: [milestones/v1.0-MILESTONE-AUDIT.md](./milestones/v1.0-MILESTONE-AUDIT.md
 **Phase Numbering:** Reset for this milestone — phases 1–4 are v2.0 work (prior milestone phases archived).
 
 - [ ] **Phase 1: Trustworthy Results** — Harden prop grading (name/stat matching), attach provenance, backfill June 8–21 MANUAL-REVIEW rows
-- [ ] **Phase 2: Slip Reconstruction and Grading** — Reconstruct model-recommended slips per day, grade against P1 results, populate Slip History, backfill June 8–21
+- [x] **Phase 2: Slip Reconstruction and Grading** — Reconstruct model-recommended slips per day, grade against P1 results, populate Slip History, backfill June 8–21 (completed 2026-06-22)
 - [ ] **Phase 3: Slips-Only Bankroll** — Rebase bankroll to slip Net PnL; confidence-scaled stakes; props become accuracy-only
 - [ ] **Phase 4: Dual Metrics and Feedback** — Slip ROI + prop hit-rate reports; bounded outcome-to-selection feedback loop
 
@@ -66,7 +66,7 @@ Plans:
 Plans:
 - [x] 02-1-PLAN.md — Slip-leg grading core: date-wide box-score merge + per-leg WIN/LOSS/PUSH/abstain via reused P1 stat_value_for_prop
 - [x] 02-2-PLAN.md — Slip aggregation + payout (calculate_slip_payout) + idempotent Slip History upsert (per-day + master); PENDING-not-LOSS on any unresolved leg
-- [ ] 02-3-PLAN.md — Build missing June 8–21 slip defs + idempotent backfill + grade_slips runner task; human-verified real-money write
+- [x] 02-3-PLAN.md — Build missing June 8–21 slip defs + idempotent backfill + grade_slips runner task; human-verified real-money write
 
 ### Phase 3: Slips-Only Bankroll
 **Goal**: The bankroll ledger reflects only what was actually staked and returned on DFS slips — individual prop outcomes are removed from the bankroll and preserved as a separate model-accuracy signal
@@ -94,7 +94,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Diagnosis | v1.0 | 5/6 | In Progress|  |
-| 2. Reliability Fixes + Defect Removal | v1.0 | 2/3 | In Progress|  |
+| 2. Reliability Fixes + Defect Removal | v1.0 | 3/3 | Complete   | 2026-06-22 |
 | 3. Resilience | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 4. Observability | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
