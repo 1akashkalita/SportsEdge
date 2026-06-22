@@ -4189,6 +4189,116 @@ def _innings_to_outs_grading(v: Any) -> float | None:
         return None
 
 
+# Known prop stat strings for parse_prop_ref disambiguation.
+# Multi-word stats listed before single-word stats so the longest match wins.
+# This list is sourced from the stat_value_for_prop disposition table; extending it here
+# keeps the ref parser in sync with what the grading path can resolve.
+_KNOWN_PROP_STATS: tuple[str, ...] = (
+    # MLB pitching multi-word (longest first to prevent prefix collision)
+    "Hits Allowed",
+    "Earned Runs Allowed",
+    "Walks Allowed",
+    "Pitcher Strikeouts",
+    "Pitches Thrown",
+    "Pitching Outs",
+    # MLB batting multi-word
+    "Total Bases",
+    "Home Runs",
+    "Hitter Strikeouts",
+    "Batter Strikeouts",
+    "Batter Walks",
+    "Hits+Runs+RBIs",
+    # NBA multi-word (combos)
+    "Pts+Rebs+Asts",
+    "Pts+Rebs",
+    "Pts+Asts",
+    "Rebs+Asts",
+    "Blks+Stls",
+    "3-PT Made",
+    "3-Pointers Made",
+    "FG Made",
+    "FT Made",
+    "Free Throws Made",
+    "Two Pointers Made",
+    "Blocked Shots",
+    "Personal Fouls",
+    "Offensive Rebounds",
+    "Defensive Rebounds",
+    # NBA single-word
+    "Points",
+    "Rebounds",
+    "Assists",
+    "Steals",
+    "Turnovers",
+    # MLB single-word (batting)
+    "Hits",
+    "Runs",
+    "RBIs",
+    "Walks",
+    "Strikeouts",
+    "Singles",
+    "Doubles",
+    "Triples",
+)
+
+
+def parse_prop_ref(ref: str) -> tuple[str, str | None, float | None]:
+    """Parse a PROP: Pick Ref string into (player, stat, line).
+
+    Handles multi-word stats (Hits Allowed, Total Bases, Pitcher Strikeouts) by
+    matching against the known disposition-table stat list (_KNOWN_PROP_STATS) rather
+    than blind whitespace splitting — a naive rsplit mis-segments stat vs line for
+    multi-word stats.
+
+    Algorithm:
+      1. Strip the "PROP:" prefix.
+      2. Split into space-separated tokens. The last token must be the numeric Line float.
+      3. Try every prefix-length match of the remaining tokens against _KNOWN_PROP_STATS
+         (normalized to lowercase for comparison), prioritizing longer matches.
+      4. Return (player, stat, line) on success; (rest, None, None) on failure.
+
+    Returns: (player: str, stat: str | None, line: float | None)
+    Side note: the Pick Ref format does NOT encode Over/Under, so side is always
+    unrecoverable from the ref alone — callers must abstain to MANUAL REVIEW.
+    """
+    body = ref[5:] if ref.upper().startswith("PROP:") else ref
+    tokens = body.strip().split()
+    if len(tokens) < 3:
+        # Need at least: Player Line (min 1 player token + 1 stat token + 1 line token)
+        return (body, None, None)
+
+    # The trailing token should be the numeric Line value.
+    try:
+        line = float(tokens[-1])
+        candidate_tokens = tokens[:-1]  # everything except the line
+    except ValueError:
+        return (body, None, None)
+
+    # Build a lowercase lookup set for fast O(1) matching.
+    # Map canonical lower -> original-casing from _KNOWN_PROP_STATS.
+    known_lower: dict[str, str] = {s.lower(): s for s in _KNOWN_PROP_STATS}
+
+    # Try matching rightmost 1, 2, 3-token sequences as the stat (longest match wins).
+    # We iterate stat_len from longest to shortest so multi-word stats beat single-word.
+    max_stat_tokens = min(4, len(candidate_tokens) - 1)  # leave at least 1 token for player
+    for stat_len in range(max_stat_tokens, 0, -1):
+        # The stat occupies the last `stat_len` tokens of candidate_tokens
+        stat_start = len(candidate_tokens) - stat_len
+        if stat_start < 1:
+            continue  # would leave no tokens for player name
+        stat_candidate = " ".join(candidate_tokens[stat_start:])
+        if stat_candidate.lower() in known_lower:
+            player = " ".join(candidate_tokens[:stat_start])
+            stat_original_casing = known_lower[stat_candidate.lower()]
+            return (player, stat_original_casing, line)
+
+    # Fallback: assume last token before line is single-word stat, rest is player.
+    # This handles unknown stats gracefully without raising.
+    player = " ".join(candidate_tokens[:-1])
+    stat_fallback = candidate_tokens[-1]
+    return (player, stat_fallback, line)
+
+
 def _canon_stat(stat: str) -> str:
     """Canonical stat key: lowercase, collapse + variants and spaces."""
     s = str(stat or "").strip().lower()
@@ -4502,6 +4612,16 @@ def grade_prop(
     actual_val, src, conf = stat_value_for_prop(player_stats, player, stat)
     if actual_val is None:
         return "PENDING", None, f"No final stat line found for {player} {stat}", "manual", 0.0
+    # Side recovery with abstain-on-ambiguity policy (01-4 Change 3).
+    # The PROP: ref format does not encode Over/Under.  For backfill rows whose
+    # Opponent/Description is null/empty AND the row signals _side_unrecoverable=True
+    # (set by the backfill grading path after re-parsing from the PROP: ref), we
+    # MUST abstain rather than default to "Over" — a 50/50 guess on real money.
+    # Normal rows with "Over"/"Under" text in Opponent/Description are unaffected.
+    sel_lower = selection.lower().strip()
+    side_in_description = " over " in f" {sel_lower} " or " under " in f" {sel_lower} "
+    if not side_in_description and row.get("_side_unrecoverable"):
+        return "PENDING", None, f"Side unrecoverable for {player} {stat} (PROP: ref has no Over/Under)", "manual", 0.0
     side = "Under" if " under " in f" {selection.lower()} " else "Over"
     diff = actual_val - line
     if diff == 0:
