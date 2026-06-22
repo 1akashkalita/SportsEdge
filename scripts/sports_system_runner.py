@@ -231,6 +231,15 @@ ODDS_API_IO_MAX_ACTIVE_BOOKMAKERS = int(os.environ.get("ODDS_API_IO_MAX_ACTIVE_B
 ENABLE_LIVE_LINE_MONITORING = env_bool("ENABLE_LIVE_LINE_MONITORING", True)
 REQUIRE_PREGAME_FOR_DAILY_PICKS = env_bool("REQUIRE_PREGAME_FOR_DAILY_PICKS", True)
 
+# Layer-2 scraped fallback flags (Component 5-7, plan 01-5).
+# Default OFF — Layer-1 alone carries the milestone; Layer-2 is residue-only and flag-gated.
+# A missing FIRECRAWL_API_KEY does NOT disable the fallback (keyless scraping is supported).
+# RESULT_SCRAPE_TIMEOUT and RESULT_SCRAPE_MAX_PER_RUN use os.environ.get because env_value()
+# is defined later in the module (at line ~352); bool flags use env_bool() defined at line 209.
+ENABLE_FIRECRAWL_RESULT_FALLBACK = env_bool("ENABLE_FIRECRAWL_RESULT_FALLBACK", False)
+RESULT_SCRAPE_TIMEOUT = int(os.environ.get("RESULT_SCRAPE_TIMEOUT") or 45)
+RESULT_SCRAPE_MAX_PER_RUN = int(os.environ.get("RESULT_SCRAPE_MAX_PER_RUN") or 8)
+
 # Research-only game-market context attached to DFS prop rows.
 # These fields are stored for future backtests only; they must not adjust
 # projections, confidence tiers, approved picks, or gate outcomes until a
@@ -5110,6 +5119,157 @@ def sync_master_and_bankroll(date: str, newly_graded: list[dict[str, Any]]) -> d
     return {"bankroll": bankroll, "current": current, "roi": roi, "day_pnl": day_pnl, "daily_rows": flat, "master_pnl": str(master)}
 
 
+# Module-level sentinel for the one-time npx/node preflight warning (Layer-2, plan 01-5).
+# Set to True after the first preflight failure so we log at most once per process.
+_NPX_PREFLIGHT_WARNED: bool = False
+
+# Per-run scrape counter for RESULT_SCRAPE_MAX_PER_RUN budget enforcement.
+# Counts actual cache-miss scrapes (not cache hits) within a single runner invocation.
+_scrape_run_count: int = 0
+
+
+def resolve_missing_stat(
+    sport: str, game: dict[str, Any], player: str, stat: str
+) -> tuple[float | None, str, float]:
+    """Layer-2 scraped fallback adapter (Component 6, plan 01-5).
+
+    Called only when Layer-1 returned (None, "manual", 0.0) AND
+    ENABLE_FIRECRAWL_RESULT_FALLBACK is True AND the per-run scrape budget is not exhausted.
+
+    Five-step resolution:
+    1. Preflight: shutil.which("npx") + shutil.which("node") — degrade if either absent.
+    2. game_id resolution from game dict — degrade if absent.
+    3. Cache read: data/research/results_cache/<event_id>.json (mkdir on first write).
+    4. On cache miss: invoke verify_results.py via _subprocess_run_with_retry (NOT bare
+       subprocess.run) with RESULT_SCRAPE_TIMEOUT; inherit os.environ (npx needs PATH/HOME);
+       overlay FIRECRAWL_API_KEY only when present.
+    5. Resolve player via name_match; map stat via the disposition table.
+
+    Returns:
+        (value, "scraped", 0.5)  on success
+        (None, "manual", 0.0)    on any failure / skip / timeout / absent player-stat
+
+    A status="ok" response that legitimately has the player absent IS cached so it is
+    not re-scraped every run.  A status="skip" response is NOT cached (transient failure).
+
+    The runner NEVER imports firecrawl; all firecrawl risk is contained in the child process
+    and unwinds through the SIGALRM machinery if it hangs.
+    """
+    global _NPX_PREFLIGHT_WARNED, _scrape_run_count
+
+    # Step 1 — preflight: require both npx and node on PATH.
+    if not shutil.which("npx") or not shutil.which("node"):
+        if not _NPX_PREFLIGHT_WARNED:
+            log("WARNING: resolve_missing_stat: npx or node not found on PATH; "
+                "Layer-2 scraped fallback disabled for this run")
+            _NPX_PREFLIGHT_WARNED = True
+        return None, "manual", 0.0
+
+    # Step 2 — game_id resolution.
+    event_id = str(game.get("event_id") or game.get("id") or "").strip()
+    if not event_id:
+        log("WARNING: resolve_missing_stat: game has no event_id/id; cannot scrape")
+        return None, "manual", 0.0
+
+    # Step 3 — cache read.
+    results_cache_dir = DATA / "research" / "results_cache"
+    cache_file = results_cache_dir / f"{event_id}.json"
+    cached_players: dict[str, Any] | None = None
+    if cache_file.exists():
+        try:
+            cached_data = json.loads(cache_file.read_text())
+            if cached_data.get("status") == "ok":
+                cached_players = cached_data.get("players", {})
+        except Exception as exc:
+            log(f"WARNING: resolve_missing_stat: cache read failed for {event_id}: {exc}")
+
+    # Step 4 — cache miss: invoke verify_results.py.
+    if cached_players is None:
+        # Check per-run scrape budget before firing a scrape.
+        if _scrape_run_count >= RESULT_SCRAPE_MAX_PER_RUN:
+            log(f"INFO: resolve_missing_stat: per-run scrape cap "
+                f"({RESULT_SCRAPE_MAX_PER_RUN}) reached; deferring {player} {stat}")
+            return None, "manual", 0.0
+
+        verify_script = SCRIPTS / "verify_results.py"
+        if not verify_script.exists():
+            log(f"WARNING: resolve_missing_stat: verify_results.py not found at {verify_script}")
+            return None, "manual", 0.0
+
+        cmd = [sys.executable, str(verify_script), "--sport", sport.lower(), "--game-id", event_id]
+
+        # Build child env: inherit os.environ (npx needs PATH and HOME); overlay key only when present.
+        child_env = os.environ.copy()
+        api_key = env_value("FIRECRAWL_API_KEY")
+        if api_key:
+            child_env["FIRECRAWL_API_KEY"] = api_key
+
+        try:
+            cp = _subprocess_run_with_retry(
+                cmd,
+                timeout=RESULT_SCRAPE_TIMEOUT,
+                context=f"verify_results {event_id}",
+                capture_output=True,
+                text=True,
+                env=child_env,
+            )
+        except Exception as exc:
+            log(f"WARNING: resolve_missing_stat: verify_results subprocess error for {event_id}: {exc}")
+            return None, "manual", 0.0
+
+        # Increment actual-scrape counter (cache miss fired).
+        _scrape_run_count += 1
+
+        # Parse JSON_RESULT from stdout.
+        envelope: dict[str, Any] | None = None
+        for line in (cp.stdout or "").splitlines():
+            if line.startswith("JSON_RESULT="):
+                try:
+                    envelope = json.loads(line[len("JSON_RESULT="):])
+                except Exception as exc:
+                    log(f"WARNING: resolve_missing_stat: JSON parse failed for {event_id}: {exc}")
+                break
+
+        if envelope is None:
+            log(f"WARNING: resolve_missing_stat: no JSON_RESULT in verify_results output for {event_id}")
+            return None, "manual", 0.0
+
+        status = envelope.get("status")
+        scraped_players: dict[str, Any] = envelope.get("players", {})
+
+        if status == "ok":
+            # Cache the result (including an empty players dict — valid "not in box" signal).
+            try:
+                results_cache_dir.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(json.dumps(envelope, indent=2) + "\n")
+            except Exception as exc:
+                log(f"WARNING: resolve_missing_stat: cache write failed for {event_id}: {exc}")
+            cached_players = scraped_players
+        else:
+            # status="skip" — transient failure; do NOT cache (may succeed next run).
+            reason = envelope.get("reason", "unknown")
+            log(f"INFO: resolve_missing_stat: verify_results skip for {event_id}: {reason}")
+            return None, "manual", 0.0
+
+    # Step 5 — resolve player via name_match + map stat via disposition table.
+    # cached_players is now populated (from cache or fresh scrape).
+    matched_key = name_match(player, cached_players.keys())
+    if matched_key is None:
+        # Legitimately absent in the box score (or no match) — not an error.
+        return None, "manual", 0.0
+
+    player_box = cached_players.get(matched_key, {})
+    # For MLB, the scraped dict has sub-dicts {"batting": {...}, "pitching": {...}}.
+    # stat_value_for_prop knows how to navigate these sub-dicts (same structure as espn_player_stats_by_event).
+    # We call it with a synthetic player_stats dict keyed by the matched_key.
+    synthetic_stats = {matched_key: player_box}
+    val, _, _ = stat_value_for_prop(synthetic_stats, matched_key, stat)
+    if val is None:
+        return None, "manual", 0.0
+
+    return val, "scraped", 0.5
+
+
 def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = None, dry_run: bool = False) -> dict[str, Any]:
     date = date or today_str()
     sport_label = sport.upper()
@@ -5191,7 +5351,39 @@ def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = 
             if result == "PENDING" and "No final stat line" in note:
                 result = "MANUAL REVIEW"
                 res_src, res_conf = "manual", 0.0
-                manual_reviews.append({"player": row.get("Player Name"), "stat": row.get("Stat"), "game": game_label, "note": note})
+                # Layer-2 scraped fallback (plan 01-5, Component 6).
+                # Invoked ONLY when: flag on + budget remaining + Layer-1 returned None.
+                # resolve_missing_stat degrades to (None,"manual",0.0) on any failure.
+                if (ENABLE_FIRECRAWL_RESULT_FALLBACK
+                        and _scrape_run_count < RESULT_SCRAPE_MAX_PER_RUN):
+                    scraped_val, scraped_src, scraped_conf = resolve_missing_stat(
+                        sport, game,
+                        str(row.get("Player Name") or ""),
+                        str(row.get("Stat") or ""),
+                    )
+                    if scraped_src == "scraped" and scraped_val is not None:
+                        # Re-grade the prop side using the scraped value.
+                        # We do NOT call grade_prop again — we replicate the side logic
+                        # directly to avoid double-parsing and to set scraped provenance.
+                        prop_line = to_float(row.get("Line"))
+                        if prop_line is not None:
+                            selection = str(row.get("Opponent/Description") or "")
+                            side = "Under" if " under " in f" {selection.lower()} " else "Over"
+                            diff = scraped_val - prop_line
+                            if diff == 0:
+                                result = "PUSH"
+                            elif side == "Over":
+                                result = "WIN" if diff > 0 else "LOSS"
+                            else:
+                                result = "WIN" if diff < 0 else "LOSS"
+                            actual = scraped_val
+                            note = (f"{row.get('Player Name')} {row.get('Stat')} actual "
+                                    f"{scraped_val} vs {side} {prop_line} [scraped]")
+                            res_src, res_conf = "scraped", 0.5
+                            # Remove from manual_reviews since we resolved it.
+                        # If prop_line is None we stay MANUAL REVIEW — cannot grade.
+                if result == "MANUAL REVIEW":
+                    manual_reviews.append({"player": row.get("Player Name"), "stat": row.get("Stat"), "game": game_label, "note": note})
             pnl = odds_profit(result, units, None)
         graded_at = now_iso()
         clv_row = matching_clv_row(clv_rows, ref, "PROP", row.get("Selection"), row.get("Player Name"))
