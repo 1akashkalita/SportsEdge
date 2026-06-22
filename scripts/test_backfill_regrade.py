@@ -294,10 +294,10 @@ class TestGradeGameInWorkbookGuard(unittest.TestCase):
         props_ws.cell(r, props_cols["Date"]).value = date
         props_ws.cell(r, props_cols["Sport"]).value = "MLB"
         props_ws.cell(r, props_cols["Player Name"]).value = "Carlos Correa"
+        props_ws.cell(r, props_cols["Team"]).value = "Twins"
         props_ws.cell(r, props_cols["Stat"]).value = "Hits"
         props_ws.cell(r, props_cols["Line"]).value = 2.5
         props_ws.cell(r, props_cols["Opponent/Description"]).value = "Over"
-        props_ws.cell(r, props_cols["Home Team"]).value = "Twins" if "Home Team" in props_cols else None
         # Seed Results sheet with MANUAL REVIEW for this ref
         ref = "PROP:Carlos Correa Hits 2.5"
         results_ws = wb["Results"]
@@ -329,6 +329,7 @@ class TestGradeGameInWorkbookGuard(unittest.TestCase):
         props_ws.cell(r, props_cols["Date"]).value = date
         props_ws.cell(r, props_cols["Sport"]).value = "MLB"
         props_ws.cell(r, props_cols["Player Name"]).value = "Carlos Correa"
+        props_ws.cell(r, props_cols["Team"]).value = "Twins"
         props_ws.cell(r, props_cols["Stat"]).value = "Hits"
         props_ws.cell(r, props_cols["Line"]).value = 2.5
         props_ws.cell(r, props_cols["Opponent/Description"]).value = "Over"
@@ -360,6 +361,7 @@ class TestGradeGameInWorkbookGuard(unittest.TestCase):
         props_ws.cell(r, props_cols["Date"]).value = date
         props_ws.cell(r, props_cols["Sport"]).value = "MLB"
         props_ws.cell(r, props_cols["Player Name"]).value = "Carlos Correa"
+        props_ws.cell(r, props_cols["Team"]).value = "Twins"
         props_ws.cell(r, props_cols["Stat"]).value = "Hits"
         props_ws.cell(r, props_cols["Line"]).value = 2.5
         props_ws.cell(r, props_cols["Opponent/Description"]).value = "Over"
@@ -389,6 +391,7 @@ class TestGradeGameInWorkbookGuard(unittest.TestCase):
         props_ws.cell(r, props_cols["Date"]).value = date
         props_ws.cell(r, props_cols["Sport"]).value = "MLB"
         props_ws.cell(r, props_cols["Player Name"]).value = "Carlos Correa"
+        props_ws.cell(r, props_cols["Team"]).value = "Twins"
         props_ws.cell(r, props_cols["Stat"]).value = "Hits"
         props_ws.cell(r, props_cols["Line"]).value = 2.5
         props_ws.cell(r, props_cols["Opponent/Description"]).value = "Over"
@@ -419,6 +422,7 @@ class TestGradeGameInWorkbookGuard(unittest.TestCase):
         props_ws.cell(r, props_cols["Date"]).value = date
         props_ws.cell(r, props_cols["Sport"]).value = "MLB"
         props_ws.cell(r, props_cols["Player Name"]).value = "Carlos Correa"
+        props_ws.cell(r, props_cols["Team"]).value = "Twins"
         props_ws.cell(r, props_cols["Stat"]).value = "Hits"
         props_ws.cell(r, props_cols["Line"]).value = 2.5
         props_ws.cell(r, props_cols["Opponent/Description"]).value = "Over"
