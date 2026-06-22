@@ -17,6 +17,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import shutil
 import signal
 import statistics
@@ -4346,6 +4347,7 @@ def parse_espn_scoreboard_game(event: dict[str, Any]) -> dict[str, Any]:
         "away_score": away_score,
         "scores": [{"name": home, "score": home_score}, {"name": away, "score": away_score}],
         "note": status_type.get("detail") or status_type.get("description") or status_name,
+        "start_time": event.get("date") or comp.get("date") or "",
     }
 
 
@@ -4360,11 +4362,46 @@ def game_matches_row(game: dict[str, Any], row: dict[str, Any]) -> bool:
         return True
     home = row.get("Home Team") or row.get("home_team")
     away = row.get("Away Team") or row.get("away_team")
-    if home or away:
-        return bool(team_aliases(home) & team_aliases(game.get("home_team")) and team_aliases(away) & team_aliases(game.get("away_team")))
+    # Handle composite matchup strings stored in Home Team (e.g. "BAL @ LAD" with Away Team=None).
+    # This happens when pick generation writes the full "AWAY @ HOME" string into the Home Team field.
+    if home and "@" in str(home) and not away:
+        parts = [p.strip() for p in str(home).split("@")]
+        if len(parts) == 2:
+            away, home = parts[0], parts[1]
+    game_home_aliases = team_aliases(game.get("home_team"))
+    game_away_aliases = team_aliases(game.get("away_team"))
+    if home and away:
+        return bool(team_aliases(home) & game_home_aliases and team_aliases(away) & game_away_aliases)
+    if home:
+        return bool(team_aliases(home) & (game_home_aliases | game_away_aliases))
+    if away:
+        return bool(team_aliases(away) & (game_home_aliases | game_away_aliases))
     team = row.get("Team")
-    if team and (team_aliases(team) & (team_aliases(game.get("home_team")) | team_aliases(game.get("away_team")))):
-        return True
+    # Only use team alias matching if the Team value resolves to a known abbreviation or full name.
+    # UUID team_ids (from Underdog's API) must not be passed to team_aliases as they never match.
+    if team:
+        resolved = team_aliases(team)
+        # resolved will contain at minimum {team, team.lower()}; if it expands to more, it's a real team token
+        if len(resolved) > 2:
+            if resolved & (game_home_aliases | game_away_aliases):
+                return True
+    # Start-time window fallback: if both the row and the game carry a start time, match within 4 hours.
+    row_start = str(row.get("Game Start Time") or row.get("Start Time UTC") or row.get("start_time") or "")
+    game_start = str(game.get("start_time") or "")
+    if row_start and game_start:
+        try:
+            from datetime import datetime, timezone
+            def _parse_iso(s: str) -> datetime:
+                s = s.rstrip("Z")
+                if "+" in s[10:]:
+                    s = s[:s.rfind("+")]
+                return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+            rs = _parse_iso(row_start)
+            gs = _parse_iso(game_start)
+            if abs((rs - gs).total_seconds()) <= 300:  # 5-minute window — DFS platform start times are derived from the same ESPN data source
+                return True
+        except Exception:
+            pass
     text = " ".join(str(v or "") for v in row.values())
     return bool((str(game.get("home_team") or "").lower() in text.lower()) or (str(game.get("away_team") or "").lower() in text.lower()))
 
@@ -4666,7 +4703,10 @@ def game_completion_monitor(date: str | None = None, dry_run: bool = False, reco
                 continue
             graded = grade_game_in_workbook(sport, game, date, dry_run=dry_run)
             results.append({"event_id": event_id, **graded})
-            if not dry_run:
+            # Only mark graded=True in the cache when actual result rows were written.
+            # If graded list is empty (e.g. no matching picks due to team-matching failure),
+            # leave state["graded"] unset so reconciliation can retry on the next run.
+            if not dry_run and (graded.get("graded") or graded.get("would_grade")):
                 state["graded"] = True
                 if game.get("status") == "void":
                     send_telegram(f"⚠️ GAME VOID: {graded.get('game')} postponed/suspended\nAll picks refunded. Bankroll restored.")
