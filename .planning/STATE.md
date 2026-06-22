@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Slips & Props Tracking
 status: executing
-stopped_at: v2.0 roadmap created — 4 phases, 14 requirements mapped, ready to plan Phase 1
-last_updated: "2026-06-22T07:17:39.218Z"
+stopped_at: Completed 01-2 — _canonical_name + name_match + espn_player_stats_by_event namespace split; ready for 01-3
+last_updated: "2026-06-22T07:27:33.699Z"
 last_activity: 2026-06-22
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-22)
 ## Current Position
 
 Phase: 1 (Trustworthy Results) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-06-22
 
-Progress: [██░░░░░░░░] 17%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
@@ -69,6 +69,10 @@ Recent decisions affecting current work:
 - Constraint: Additive-only workbook schema changes; no gate logic or pick verdict changes; tasks must stay under 660s cron budget (cron kill at 720s)
 - Constraint: `ENABLE_FIRECRAWL_RESULT_FALLBACK` default off — Layer-1 alone carries the milestone; Layer-2 is residue-only and flag-gated
 - Hard gate for Phase 1 done: ≥ 80% of non-Fantasy-Score MANUAL REVIEW prop rows resolve on the June 8 dry-run
+- Plan 01-2: group_data.get("type") returns "batting"/"pitching" for MLB groups and None for NBA — the authoritative group identity field (NOT get("name") which is None for both sports in confirmed fixtures)
+- Plan 01-2: MLB batting/pitching namespace split uses sub-dicts; NBA single-group path stays byte-identical flat dict
+- Plan 01-2: Hit-type counts from plays[].type.type stored as batting._hit_counts; atBats top-level key absent (oracle RECLASSIFY #8)
+- Plan 01-2: name_match abstains (returns None) on ambiguous Tier 3/4 matches — strictly no-guess for real-money grading
 
 ### Pending Todos
 
@@ -101,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-22T07:17:39.182Z
-Stopped at: v2.0 roadmap created — 4 phases, 14 requirements mapped, ready to plan Phase 1
+Last session: 2026-06-22
+Stopped at: Completed 01-2 — _canonical_name + name_match + espn_player_stats_by_event namespace split; ready for 01-3
 Resume file: None
