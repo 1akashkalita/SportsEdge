@@ -13,15 +13,23 @@ Exports (Wave 2):
   - write_slip_history_rows(ws, date, graded_slips) -> int
   - grade_slips_for_date(date, *, dry_run=False, player_stats_by_sport=None) -> dict[str, Any]
 
+Exports (Wave 3):
+  - ensure_slip_defs(date) -> bool   (build missing slips_<date>.json via build_slips.py subprocess)
+  - backfill_range(start_date, end_date, *, dry_run=False) -> list[dict]
+  - main()                           (CLI: --date / --start+--end / --dry-run; prints JSON_RESULT=)
+
 No side effects at import time.
 Run from scripts/ with python3 (3.14).
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from collections import Counter
+from datetime import date as _date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -569,3 +577,234 @@ def grade_slips_for_date(
         "dry_run": False,
         "graded": graded_slips,
     }
+
+
+# ---------------------------------------------------------------------------
+# Wave 3: ensure_slip_defs + backfill_range + CLI
+# ---------------------------------------------------------------------------
+
+# Timeout (seconds) for the build_slips.py subprocess invocation per date.
+# build_slips reads projections from disk and does no network calls, so 120 s
+# is generous; use a sub-budget to avoid consuming the entire 660 s task budget.
+_BUILD_SLIPS_TIMEOUT: int = 120
+
+
+def ensure_slip_defs(date: str) -> bool:
+    """Ensure a slip definition file exists for *date*.
+
+    If ``data/research/slips/slips_<date>.json`` is already present, this is a
+    no-op (idempotent) and returns ``True``.
+
+    Otherwise, shells out to ``build_slips.py --date <date>`` (isolated via
+    subprocess so a crash cannot propagate here) and returns whether the file
+    exists after the attempt.
+
+    Args:
+        date: ISO date string "YYYY-MM-DD".
+
+    Returns:
+        True  — slip def exists (was present or successfully built).
+        False — file still missing after the build attempt (builder failed or
+                the date has no projections).
+    """
+    slip_file = _SLIPS_DIR / f"slips_{date}.json"
+    if slip_file.exists():
+        return True
+
+    build_script = _SCRIPTS / "build_slips.py"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(build_script), "--date", date],
+            cwd=str(_SCRIPTS),
+            capture_output=True,
+            text=True,
+            timeout=_BUILD_SLIPS_TIMEOUT,
+        )
+        if result.returncode != 0:
+            print(
+                f"[ensure_slip_defs] build_slips.py --date {date} exited "
+                f"{result.returncode}: {result.stderr.strip()[:200]}",
+                flush=True,
+            )
+    except subprocess.TimeoutExpired:
+        print(
+            f"[ensure_slip_defs] build_slips.py --date {date} timed out "
+            f"after {_BUILD_SLIPS_TIMEOUT}s",
+            flush=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[ensure_slip_defs] build_slips.py --date {date} error: {exc}",
+            flush=True,
+        )
+
+    return slip_file.exists()
+
+
+def _date_range(start: str, end: str) -> list[str]:
+    """Return list of ISO date strings from *start* to *end* inclusive."""
+    s = _date.fromisoformat(start)
+    e = _date.fromisoformat(end)
+    if s > e:
+        return []
+    dates: list[str] = []
+    current = s
+    while current <= e:
+        dates.append(current.isoformat())
+        current += timedelta(days=1)
+    return dates
+
+
+def backfill_range(
+    start_date: str,
+    end_date: str,
+    *,
+    dry_run: bool = False,
+) -> list[dict[str, Any]]:
+    """Iterate each date in [start_date, end_date] and grade + persist slips.
+
+    For each date:
+      1. Calls ``ensure_slip_defs(date)`` — builds the slip def file via
+         ``build_slips.py`` if missing; skips the date if it still doesn't
+         exist after the build attempt (no projections available).
+      2. Calls ``grade_slips_for_date(date, dry_run=dry_run)`` and collects
+         the per-date summary.
+
+    Idempotent: re-running over the same range produces no duplicate Slip
+    History rows because ``grade_slips_for_date`` uses (Date, Slip ID) upsert.
+
+    Args:
+        start_date: ISO "YYYY-MM-DD" range start (inclusive).
+        end_date:   ISO "YYYY-MM-DD" range end (inclusive).
+        dry_run:    When True, grade but do not write any workbooks.
+
+    Returns:
+        List of per-date summary dicts (one per date in the range).  Each dict
+        includes a ``"def_built"`` bool indicating whether a missing def was
+        successfully built before grading.
+    """
+    dates = _date_range(start_date, end_date)
+    summaries: list[dict[str, Any]] = []
+
+    for date in dates:
+        slip_file = _SLIPS_DIR / f"slips_{date}.json"
+        was_present = slip_file.exists()
+        def_ok = ensure_slip_defs(date)
+
+        if not def_ok:
+            summaries.append(
+                {
+                    "status": "no_slip_file",
+                    "date": date,
+                    "def_built": False,
+                    "total_slips": 0,
+                    "win_count": 0,
+                    "loss_count": 0,
+                    "pending_count": 0,
+                    "rows_written": 0,
+                    "dry_run": dry_run,
+                    "graded": [],
+                    "message": f"No slip def for {date} and build_slips.py could not create one.",
+                }
+            )
+            continue
+
+        summary = grade_slips_for_date(date, dry_run=dry_run)
+        summary["def_built"] = not was_present and def_ok
+        summaries.append(summary)
+
+    return summaries
+
+
+def main() -> None:
+    """CLI entry point for grade_slips.
+
+    Usage (run from scripts/):
+      python3 grade_slips.py --date 2026-06-21
+      python3 grade_slips.py --date 2026-06-21 --dry-run
+      python3 grade_slips.py --start 2026-06-08 --end 2026-06-21
+      python3 grade_slips.py --start 2026-06-08 --end 2026-06-21 --dry-run
+
+    Prints ``JSON_RESULT={...}`` on stdout, mirroring the runner's stdout
+    contract.  Exits 0 on success, 1 on unhandled error.
+    """
+    parser = argparse.ArgumentParser(
+        description="Grade slips and (optionally) persist to Slip History."
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--date", help="Single date YYYY-MM-DD (default: today)")
+    group.add_argument(
+        "--start",
+        metavar="START",
+        help="Range start YYYY-MM-DD (use with --end)",
+    )
+    parser.add_argument(
+        "--end",
+        metavar="END",
+        help="Range end YYYY-MM-DD (use with --start)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Grade but do not write workbooks.",
+    )
+    args = parser.parse_args()
+
+    dry_run: bool = args.dry_run
+
+    try:
+        if args.start:
+            end = args.end or args.start
+            result: Any = {
+                "status": "ok",
+                "start_date": args.start,
+                "end_date": end,
+                "dry_run": dry_run,
+                "per_date": backfill_range(args.start, end, dry_run=dry_run),
+            }
+        else:
+            # Single date (or today as default).
+            target_date: str
+            if args.date:
+                target_date = args.date
+            else:
+                # Import today_str lazily so grade_slips stays importable without runner.
+                try:
+                    target_date = _runner.today_str()
+                except Exception:
+                    from datetime import date as _d
+                    target_date = _d.today().isoformat()
+
+            # Ensure the def exists for a single date too.
+            ensure_slip_defs(target_date)
+            result = grade_slips_for_date(target_date, dry_run=dry_run)
+
+        # Mirror runner's stdout contract: print compact JSON_RESULT.
+        # Strip the large "graded" lists for cleanliness in single-date mode.
+        output = dict(result)
+        if "graded" in output and not dry_run:
+            output.pop("graded", None)
+        if "per_date" in output:
+            # Summarise each date without the full graded list.
+            clean_per_date = []
+            for d in output["per_date"]:
+                entry = {k: v for k, v in d.items() if k != "graded"}
+                clean_per_date.append(entry)
+            output["per_date"] = clean_per_date
+
+        print("JSON_RESULT=" + json.dumps(output, sort_keys=True), flush=True)
+        sys.exit(0)
+
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+        err = {
+            "status": "error",
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }
+        print("JSON_RESULT=" + json.dumps(err, sort_keys=True), flush=True)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -130,6 +130,9 @@ TASK_TIMEOUTS: dict[str, int] = {
     "game_completion_monitor": 660,
     "check_results": 660,
     "verify": 660,
+    # grade_slips fetches ESPN box scores for each date; must not hit the 60 s
+    # default that would SIGALRM-kill mid-ESPN-fetch.  660 s matches all other tasks.
+    "grade_slips": 660,
 }
 
 
@@ -6658,6 +6661,10 @@ def task_workbook_paths(task: str) -> list[Path]:
         return [workbook_path("mlb", date)]
     if task in {"game_completion_monitor", "check_results"}:
         return [workbook_path("nba", date), workbook_path("mlb", date), PNL_DIR / "master_pnl.xlsx"]
+    # grade_slips writes Slip History to both per-sport per-day workbooks AND master_pnl;
+    # acquire cooperative locks on all three to prevent races with daily_picks/check_results.
+    if task == "grade_slips":
+        return [workbook_path("nba", date), workbook_path("mlb", date), PNL_DIR / "master_pnl.xlsx"]
     return [workbook_path(sport, date)] if sport else []
 
 
@@ -6689,6 +6696,9 @@ def run_task(task: str) -> dict[str, Any]:
         "check_results": check_results,
         "game_completion_monitor": game_completion_monitor,
         "verify": verify,
+        # grade_slips: grades today's slips and persists idempotent Slip History rows.
+        # Imported lazily to keep the runner importable even if grade_slips is absent.
+        "grade_slips": lambda: __import__("grade_slips").grade_slips_for_date(today_str()),
     }
     if task not in mapping:
         raise SystemExit(f"Unknown task: {task}")
