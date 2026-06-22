@@ -275,7 +275,7 @@ RESULT_HEADERS = [
     "Result", "Units", "PnL", "CLV", "Opening Line", "Closing Line", "Line Movement",
     "Favorable Line Move 0.5+", "Demon Available", "Goblin Available", "Injury Flag",
     "Correlation Group", "Slip ID", "Graded At", "Notes", "Game", "Actual",
-] + MARKET_CONTEXT_FIELDS
+] + MARKET_CONTEXT_FIELDS + ["Result Source", "Result Confidence"]
 
 
 def now_iso() -> str:
@@ -4470,27 +4470,41 @@ def stat_value_for_prop(
     return _MANUAL
 
 
-def grade_prop(row: dict[str, Any], player_stats: dict[str, dict[str, float]], game_final: bool) -> tuple[str, float | None, str]:
+def grade_prop(
+    row: dict[str, Any], player_stats: dict[str, dict[str, float]], game_final: bool
+) -> tuple[str, float | None, str, str, float]:
+    """Grade a prop bet and return provenance.
+
+    Returns (result, actual, note, source, confidence):
+      - result: "WIN" | "LOSS" | "PUSH" | "PENDING"
+      - actual: the box-score value used (None when unresolved)
+      - note: human-readable grading note
+      - source: "api" | "manual" (never "scraped" here — Layer-2 is in 01-5)
+      - confidence: 1.0 (exact+DIRECT) / 0.8 (DERIVED) / 0.6 (fuzzy) / 0.0 (unresolved)
+
+    PENDING / missing-line / stat-not-found branches all return ("manual", 0.0)
+    so callers can propagate provenance without special-casing.
+    """
     if not game_final:
-        return "PENDING", None, "Game not final; prop stat grading deferred"
+        return "PENDING", None, "Game not final; prop stat grading deferred", "manual", 0.0
     player = str(row.get("Player Name") or "")
     stat = str(row.get("Stat") or "")
     line = to_float(row.get("Line"))
     selection = str(row.get("Opponent/Description") or "")
     if line is None:
-        return "PENDING", None, "Missing prop line"
-    actual = stat_value_for_prop(player_stats, player, stat)
-    if actual is None:
-        return "PENDING", None, f"No final stat line found for {player} {stat}"
+        return "PENDING", None, "Missing prop line", "manual", 0.0
+    actual_val, src, conf = stat_value_for_prop(player_stats, player, stat)
+    if actual_val is None:
+        return "PENDING", None, f"No final stat line found for {player} {stat}", "manual", 0.0
     side = "Under" if " under " in f" {selection.lower()} " else "Over"
-    diff = actual - line
+    diff = actual_val - line
     if diff == 0:
         result = "PUSH"
     elif side == "Over":
         result = "WIN" if diff > 0 else "LOSS"
     else:
         result = "WIN" if diff < 0 else "LOSS"
-    return result, actual, f"{player} {stat} actual {actual} vs {side} {line}"
+    return result, actual_val, f"{player} {stat} actual {actual_val} vs {side} {line}", src, conf
 
 
 def pnl_for_result(result: str, units: float) -> float:
@@ -4673,6 +4687,9 @@ def result_record_from_source(date: str, sport_label: str, source: dict[str, Any
     }
     for field in MARKET_CONTEXT_FIELDS:
         record[field] = extra.get(field) if extra.get(field) not in (None, "") else source.get(field)
+    # Provenance columns (Component 8 — additive, name-keyed, migrated by ensure_ws_columns)
+    record["Result Source"] = extra.get("Result Source")
+    record["Result Confidence"] = extra.get("Result Confidence")
     return record
 
 
@@ -4995,7 +5012,8 @@ def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = 
             continue
         graded_at = now_iso()
         clv_row = matching_clv_row(clv_rows, ref, pick_type, row.get("Selection"), row.get("Player/Team"))
-        rec = result_record_from_source(date, sport_label, row, ref, result, actual, units, pnl, graded_at, note, game_label, clv_row)
+        # Spread/total/VOID grade deterministically from game object → api/1.0 provenance.
+        rec = result_record_from_source(date, sport_label, row, ref, result, actual, units, pnl, graded_at, note, game_label, clv_row, {"Result Source": "api", "Result Confidence": 1.0})
         upsert_result_row(results_ws, rec)
         graded.append({**rec, "sport": sport_label, "game": game_label, "ref": ref, "result": result, "actual": actual, "units": units, "pnl": pnl, "graded_at": graded_at, "note": note})
 
@@ -5011,16 +5029,18 @@ def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = 
             continue
         units = units_from_prop_reason(row)
         if is_void:
-            result, actual, note, pnl = "VOID", None, f"{game_label} {game.get('status_name')} — refunded", 0.0
+            result, actual, note, res_src, res_conf = "VOID", None, f"{game_label} {game.get('status_name')} — refunded", "api", 1.0
+            pnl = 0.0
         else:
-            result, actual, note = grade_prop(row, player_stats, True)
+            result, actual, note, res_src, res_conf = grade_prop(row, player_stats, True)
             if result == "PENDING" and "No final stat line" in note:
                 result = "MANUAL REVIEW"
+                res_src, res_conf = "manual", 0.0
                 manual_reviews.append({"player": row.get("Player Name"), "stat": row.get("Stat"), "game": game_label, "note": note})
             pnl = odds_profit(result, units, None)
         graded_at = now_iso()
         clv_row = matching_clv_row(clv_rows, ref, "PROP", row.get("Selection"), row.get("Player Name"))
-        rec = result_record_from_source(date, sport_label, row, ref, result, actual, units, pnl, graded_at, note, game_label, clv_row, {"Pick Type": "PROP", "Player/Team": row.get("Player Name"), "Pick": row.get("Selection"), "Platform": row.get("Platform") or "", "Confidence Tier": row.get("Confidence")})
+        rec = result_record_from_source(date, sport_label, row, ref, result, actual, units, pnl, graded_at, note, game_label, clv_row, {"Pick Type": "PROP", "Player/Team": row.get("Player Name"), "Pick": row.get("Selection"), "Platform": row.get("Platform") or "", "Confidence Tier": row.get("Confidence"), "Result Source": res_src, "Result Confidence": res_conf})
         upsert_result_row(results_ws, rec)
         graded.append({**rec, "sport": sport_label, "game": game_label, "ref": ref, "result": result, "actual": actual, "units": units, "pnl": pnl, "graded_at": graded_at, "note": note})
 
@@ -5051,7 +5071,8 @@ def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = 
             note = f"Parlay legs from {game_label}: {actual or 'no same-game graded legs found'}"
         pnl = odds_profit(result, units, None)
         graded_at = now_iso()
-        rec = result_record_from_source(date, sport_label, row, ref, result, actual, units, pnl, graded_at, note, game_label, {}, {"Pick Type": "PARLAY", "Pick": row.get("Legs"), "Edge Type Tags": "Correlated", "Correlation Group": row.get("Correlation Group") or row.get("Parlay Name"), "Slip ID": row.get("Slip ID")})
+        # Parlay grades deterministically from game/leg results → api/1.0 provenance.
+        rec = result_record_from_source(date, sport_label, row, ref, result, actual, units, pnl, graded_at, note, game_label, {}, {"Pick Type": "PARLAY", "Pick": row.get("Legs"), "Edge Type Tags": "Correlated", "Correlation Group": row.get("Correlation Group") or row.get("Parlay Name"), "Slip ID": row.get("Slip ID"), "Result Source": "api", "Result Confidence": 1.0})
         upsert_result_row(results_ws, rec)
         graded.append({**rec, "sport": sport_label, "game": game_label, "ref": ref, "result": result, "actual": actual, "units": units, "pnl": pnl, "graded_at": graded_at, "note": note})
 

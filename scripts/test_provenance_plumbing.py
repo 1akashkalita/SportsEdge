@@ -148,13 +148,11 @@ class TestGradePropApiProvenance(unittest.TestCase):
         self.assertEqual(src, "api")
         self.assertEqual(conf, 1.0)
 
-    def test_loss_under_exact_name_direct_stat_api_1_0(self) -> None:
-        """Points UNDER 35.5 with actual=30 → LOSS (30 < 35.5), source=api, confidence=1.0."""
+    def test_win_under_exact_name_direct_stat_api_1_0(self) -> None:
+        """Points UNDER 35.5 with actual=30 → WIN (30 < 35.5), source=api, confidence=1.0."""
         row = {"Player Name": "LeBron James", "Stat": "Points", "Line": "35.5", "Opponent/Description": "Under"}
         result, actual, note, src, conf = grade_prop(row, _NBA_PLAYER_STATS, True)
-        self.assertEqual(result, "LOSS")  # 30 not under 35.5? Wait: Under: WIN if actual < line
-        # actual=30, line=35.5, diff=30-35.5=-5.5 < 0 -> Under WIN
-        # Actually: side=Under -> WIN if diff < 0
+        # actual=30, line=35.5, diff=30-35.5=-5.5 < 0 → Under: WIN if diff < 0
         self.assertEqual(result, "WIN")  # 30 < 35.5 → UNDER wins
         self.assertEqual(src, "api")
         self.assertEqual(conf, 1.0)
