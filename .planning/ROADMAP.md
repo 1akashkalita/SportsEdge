@@ -64,7 +64,7 @@ Plans:
   4. An operator can distinguish slip ROI from prop win-rate at a glance from the persisted sheets (separate tracking is demonstrably present, not interleaved)
 **Plans**: 3 plans
 Plans:
-- [ ] 02-1-PLAN.md — Slip-leg grading core: date-wide box-score merge + per-leg WIN/LOSS/PUSH/abstain via reused P1 stat_value_for_prop
+- [x] 02-1-PLAN.md — Slip-leg grading core: date-wide box-score merge + per-leg WIN/LOSS/PUSH/abstain via reused P1 stat_value_for_prop
 - [ ] 02-2-PLAN.md — Slip aggregation + payout (calculate_slip_payout) + idempotent Slip History upsert (per-day + master); PENDING-not-LOSS on any unresolved leg
 - [ ] 02-3-PLAN.md — Build missing June 8–21 slip defs + idempotent backfill + grade_slips runner task; human-verified real-money write
 
@@ -94,7 +94,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Diagnosis | v1.0 | 5/6 | In Progress|  |
-| 2. Reliability Fixes + Defect Removal | v1.0 | 5/5 | Complete | 2026-06-20 |
+| 2. Reliability Fixes + Defect Removal | v1.0 | 1/3 | In Progress|  |
 | 3. Resilience | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 4. Observability | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |

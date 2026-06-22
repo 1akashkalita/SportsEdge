@@ -10,14 +10,14 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 - [x] **RESULTS-02**: NBA + MLB stat derivation covers composite/pitcher stats (Total Bases, Hits+Runs+RBIs, Singles, Pitching Outs, Blks+Stls, FG made/attempted split, etc.) via an explicit disposition table, replacing the substring fallback that caused false positives.
 - [x] **RESULTS-03**: Batting vs pitching stat namespaces are disambiguated so shared MLB labels (strikeouts, hits, runs, walks) grade against the correct group.
 - [x] **RESULTS-04**: Every graded prop row records `Result Source` (api / scraped / manual) and a numeric `Result Confidence` (additive schema columns).
-- [ ] **RESULTS-05**: A feature-flagged, keyless, subprocess-isolated firecrawl fallback resolves residual unresolved stats by scraping the box score, and degrades safely to MANUAL REVIEW on any failure/timeout/offline/rate-limit without crashing grading.
+- [x] **RESULTS-05**: A feature-flagged, keyless, subprocess-isolated firecrawl fallback resolves residual unresolved stats by scraping the box score, and degrades safely to MANUAL REVIEW on any failure/timeout/offline/rate-limit without crashing grading.
 - [x] **RESULTS-06**: Backfill re-grading replaces MANUAL REVIEW / PENDING rows with terminal grades in place — no duplicate Results/Pick-History rows, settled WIN/LOSS/PUSH/VOID rows untouched, and no parlay mis-grade from partial leg sets.
 - [ ] **RESULTS-07**: The June 8–21 MANUAL-REVIEW backlog is recovered to the measured achievable rate (hard gate: ≥80% of non-Fantasy-Score MANUAL-REVIEW prop rows resolve on the June 8 dry-run).
 
 ### SLIPS — Reconstruct, grade, record (Phase 2 / P2)
 
 - [ ] **SLIPS-01**: The system reconstructs the model's recommended slips per day from saved projections/correlations (`build_slips.py` wired into the flow).
-- [ ] **SLIPS-02**: Each slip's legs are graded against trustworthy (P1) results, and the Slip History sheet is populated (legs, slip result, payout multiplier, gross return, net PnL).
+- [x] **SLIPS-02**: Each slip's legs are graded against trustworthy (P1) results, and the Slip History sheet is populated (legs, slip result, payout multiplier, gross return, net PnL).
 - [ ] **SLIPS-03**: Slips are backfilled across June 8–21 as a backtest of the model's slip recommendations.
 - [ ] **SLIPS-04**: Slip success and individual-prop success are tracked separately (props = model accuracy, slips = money outcome).
 
@@ -56,11 +56,11 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 | RESULTS-02 | Phase 1 | Complete |
 | RESULTS-03 | Phase 1 | Complete |
 | RESULTS-04 | Phase 1 | Complete |
-| RESULTS-05 | Phase 1 | Pending |
+| RESULTS-05 | Phase 1 | Complete |
 | RESULTS-06 | Phase 1 | Complete |
 | RESULTS-07 | Phase 1 | Pending |
 | SLIPS-01 | Phase 2 | Pending |
-| SLIPS-02 | Phase 2 | Pending |
+| SLIPS-02 | Phase 2 | Complete |
 | SLIPS-03 | Phase 2 | Pending |
 | SLIPS-04 | Phase 2 | Pending |
 | BANKROLL-01 | Phase 3 | Pending |
