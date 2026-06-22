@@ -8,6 +8,10 @@ The Hermes sports-betting automation is an existing, in-use Python system that r
 
 Every cron job and pipeline runs correctly on schedule — no timeouts, no task-failure alerts — so the operator can stop babysitting it and confidently move on to model/accuracy work next.
 
+## Current State
+
+**Shipped v1.0 — Stability Hardening (2026-06-22):** 5 phases / 17 plans, 16/16 v1 requirements satisfied. The broken-pipe `TASK FAILED` is eliminated, cron timeouts are root-caused and bounded (660s SIGALRM budget under a 720s cron ceiling), and a resilience + observability + CI safety net guards every fix. Milestone audit: `tech_debt` (no blockers). Outstanding before the system is fully "trusted in production": 5 live-environment human-UAT confirmations + optional Nyquist/hardening follow-ups (see STATE.md → Deferred Items). **Next milestone:** model/accuracy work — the explicit "after stability" goal — once the live UAT confirms the hardening on the real cron host. Start with `/gsd-new-milestone`.
+
 ## Requirements
 
 ### Validated
@@ -73,10 +77,10 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Scope = full hardening (root-cause fixes + safety net + observability + CI) | Operator wants to fully trust the system before model work | — Pending |
-| Fix only stability-threatening defects; no broad monolith refactor | "Stable before changing stuff" | — Pending |
-| Defer all model/accuracy work to a later milestone | Build a reliable foundation first | — Pending |
-| Definition of done = all cron jobs + pipelines run correctly (no timeouts, no task-failed alerts) | The operator's stated bar for "stable" | — Pending |
+| Scope = full hardening (root-cause fixes + safety net + observability + CI) | Operator wants to fully trust the system before model work | ✓ v1.0 — all 5 phases shipped (diagnosis → fixes → resilience → observability → CI); 16/16 requirements validated |
+| Fix only stability-threatening defects; no broad monolith refactor | "Stable before changing stuff" | ✓ v1.0 — held: only FIX/DEF/RES/OBS/CI changes; verifier confirmed zero gate-logic / pick-output / workbook-schema changes |
+| Defer all model/accuracy work to a later milestone | Build a reliable foundation first | ✓ v1.0 — held: model/accuracy stayed Out of Scope; carried to the next milestone |
+| Definition of done = all cron jobs + pipelines run correctly (no timeouts, no task-failed alerts) | The operator's stated bar for "stable" | ✓ v1.0 — met by code + regression tests (16/16); final live-cron confirmation deferred as human UAT |
 | Treat diagnosis as a first-class step (reproduce + root-cause before fixing) | The exact cause of the broken pipe is not yet pinned down | ✓ Phase 1 — `DIAGNOSIS.md`: broken pipe = bare `JSON_RESULT=` print in `main()` (`sports_system_runner.py:5634`/`:5640`); dominant timeout = `send_telegram()` retry loop (30s×2 per call site, 24,923s max observed), NOT stacked subprocess timeouts (ruled out) |
 | Bound the diagnosed failure modes minimally rather than install the general safety net in the same phase | Fix the proven, dominant contributors first; defer retries/hard-timeouts/SIGPIPE to Phase 3 so regression tests cover the actual fix paths | ✓ Phase 2 — `safe_print` stdout sweep (FIX-01), `send_telegram` 10s timeout + per-invocation circuit-breaker, Obsidian decoupled to one task-end `sports_run_log` sync (FIX-02), duplicate defs removed (DEF-01), `Path.home()` base (DEF-02); live 11/11 task pass (FIX-03) |
 | RES-01 retry scoped to the subprocess stages, not every HTTP call | The fetch/ESPN/projection stages are already isolated subprocesses with clean exit codes; Telegram (Phase-2 circuit breaker) and Odds-API.io (own retry loop) handle their own transient faults | ✓ Phase 3 — `_subprocess_run_with_retry` wraps the 3 stages with one backoff re-run (D-04) |
@@ -102,4 +106,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-21 after Phase 5 (CI) completion — Stability Hardening milestone complete (17/17 plans, all requirements validated)*
+*Last updated: 2026-06-22 after v1.0 Stability Hardening milestone close — archived to milestones/, tagged v1.0 (17/17 plans, 16/16 requirements validated; audit status tech_debt, no blockers)*

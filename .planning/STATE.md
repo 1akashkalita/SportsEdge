@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
-stopped_at: Milestone complete (Phase 05 was final phase)
-last_updated: 2026-06-21T19:38:21.171Z
-last_activity: 2026-06-21
+status: Awaiting next milestone
+stopped_at: Phase 5 context gathered
+last_updated: "2026-06-22T01:39:21.327Z"
+last_activity: 2026-06-22 — Milestone v1.0 completed and archived
 progress:
   total_phases: 5
   completed_phases: 5
@@ -25,12 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-14)
 
 ## Current Position
 
-Phase: 05
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-22 - Completed quick task 260621-ohh: fix send_slips_telegram urllib→requests SSL failure
-
-Progress: [██████████] 100%
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-22 — Milestone v1.0 completed and archived
 
 ## Performance Metrics
 
@@ -104,9 +102,20 @@ None yet.
 |----------|------|--------|-------------|
 | Observability | OBS-04: Historical run analytics / dashboard | v2 deferred | Requirements |
 | Observability | OBS-05: Per-stage timing breakdown for trend analysis | v2 deferred | Requirements |
+| Human UAT | Phase 04: live run_log.jsonl accumulation · 🩺 health Telegram alert · 🔁 repeated-failure alert (3 scenarios) | Acknowledged | v1.0 close (2026-06-22) |
+| Human UAT | Phase 05: real `git push` fires pre-push gate · `--no-verify` escape hatch (2 scenarios) | Acknowledged | v1.0 close (2026-06-22) |
+| Verification | Phase 04 & 05 VERIFICATION.md status=human_needed (all must-haves verified; live-env confirmation only) | Acknowledged | v1.0 close (2026-06-22) |
+| Nyquist | Validation incomplete: P1/P3 partial (draft, nyquist_compliant:false), P2/P4/P5 missing VALIDATION.md — run /gsd:validate-phase per phase | Acknowledged | v1.0 close (2026-06-22) |
+| Hardening | Phase 05 review WR-01…05 (notably WR-02: no pytest subprocess timeout in CI gate) — non-critical | Acknowledged | v1.0 close (2026-06-22) |
+
+_5 items acknowledged and deferred at milestone close on 2026-06-22 (milestone audit status: tech_debt, no blockers). The flagged quick task 260621-ohh is complete (commit 2f245f5) — a SUMMARY-filename false positive, not a real gap._
 
 ## Session Continuity
 
 Last session: 2026-06-21T19:20:11.296Z
 Stopped at: Phase 5 context gathered
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
