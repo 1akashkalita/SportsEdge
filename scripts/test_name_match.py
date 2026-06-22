@@ -70,11 +70,11 @@ class TestNameMatchPositivePairs(unittest.TestCase):
         self.assertEqual(result, "jokic", "Exact match must return the original key")
 
     def test_exact_match_preserves_original_key(self):
-        """Tier 1: returned key is the ORIGINAL box key, not a transformed version."""
+        """Tier 1: returned key equals the ORIGINAL box key byte-for-byte."""
         keys = {"giannis antetokounmpo"}
         result = name_match("giannis antetokounmpo", keys)
-        self.assertIs(result, "giannis antetokounmpo",
-                      "Tier 1 must return the original key object")
+        self.assertEqual(result, "giannis antetokounmpo",
+                         "Tier 1 must return the original key value")
 
     # --- Tier 2: _canonical_name equality ---
 

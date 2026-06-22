@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 import traceback
+import unicodedata
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
@@ -3481,6 +3482,131 @@ def normalize_prop_stat(value: Any) -> str:
 
 def normalize_player_name(value: Any) -> str:
     return " ".join(str(value or "").replace("_", " ").lower().split())
+
+
+# ---------------------------------------------------------------------------
+# Grading-local name primitives (do NOT modify normalize_player_name above)
+# ---------------------------------------------------------------------------
+
+_NAME_SUFFIX_SET = {"jr", "sr", "ii", "iii", "iv"}
+
+
+def _canonical_name(name: Any) -> str:
+    """Canonical grading-local name normalizer for name matching.
+
+    Order (Component 1 of the Trustworthy Results design):
+    1. Coerce to str
+    2. Lowercase
+    3. NFKD-normalize and strip Unicode combining marks (accent fold)
+    4. Replace '.', "'", '’' (right single quotation mark), '-' with spaces
+    5. Drop a trailing token that is a suffix (jr/sr/ii/iii/iv)
+    6. Collapse whitespace
+
+    This function is GRADING-LOCAL — it is NOT the same as normalize_player_name
+    (which is used for prop-source lookups and must remain unchanged).
+    """
+    s = str(name or "")
+    s = s.lower()
+    # NFKD + strip combining marks (accent fold: ć -> c, ñ -> n, etc.)
+    s = "".join(
+        c for c in unicodedata.normalize("NFKD", s)
+        if not unicodedata.combining(c)
+    )
+    # Punctuation to spaces
+    for ch in (".", "'", "’", "-"):
+        s = s.replace(ch, " ")
+    # Drop trailing suffix token
+    tokens = s.split()
+    if tokens and tokens[-1] in _NAME_SUFFIX_SET:
+        tokens = tokens[:-1]
+    return " ".join(tokens)
+
+
+def name_match(prop_name: str, boxscore_keys, game_roster: Any = None) -> str | None:
+    """Resolve a prop player name to the matching box-score key.
+
+    Returns the ORIGINAL box-score key (callers still index player_stats by it).
+    Returns None (abstain) if no unambiguous match is found — never guesses.
+
+    Tiers (first hit wins):
+    1. Exact: prop_name.lower() in boxscore_keys — preserves every currently-
+       passing grade verdict byte-for-byte.
+    2. Canonical equality: _canonical_name(prop) == _canonical_name(key) for
+       exactly one key.
+    3. Initial-form bridge: one side is "X last" (single-letter first token).
+       A key matches when its first token starts with X AND its last canonical
+       token equals the prop's last canonical token.  Abstains if 0 or 2+ keys
+       match (never guesses).
+    4. Last-name-unique fallback: if exactly one key shares the canonical last
+       token, return it; else None.
+
+    Both sides are canonicalized so box keys like "f. last" (shortName fallback)
+    are handled symmetrically.
+    """
+    prop_lower = str(prop_name or "").lower()
+    keys = list(boxscore_keys)
+
+    # --- Tier 1: exact byte match ---
+    if prop_lower in keys:
+        return prop_lower
+
+    # --- Tier 2: canonical equality ---
+    prop_canon = _canonical_name(prop_name)
+    tier2_matches = [k for k in keys if _canonical_name(k) == prop_canon]
+    if len(tier2_matches) == 1:
+        return tier2_matches[0]
+    if len(tier2_matches) > 1:
+        # Multiple canonical equals — abstain (should be rare)
+        return None
+
+    # --- Tier 3: initial-form bridge ---
+    # Check whether EITHER side is an initial form "X last"
+    prop_tokens = prop_canon.split()
+    is_prop_initial = len(prop_tokens) >= 2 and len(prop_tokens[0]) == 1
+
+    tier3_matches = []
+    if is_prop_initial:
+        prop_initial = prop_tokens[0]
+        prop_last = prop_tokens[-1]
+        for k in keys:
+            k_tokens = _canonical_name(k).split()
+            if (
+                len(k_tokens) >= 2
+                and k_tokens[0].startswith(prop_initial)
+                and k_tokens[-1] == prop_last
+            ):
+                tier3_matches.append(k)
+    else:
+        # Prop is NOT initial form; check whether any KEY is initial form "X last"
+        # and prop could resolve to it
+        for k in keys:
+            k_tokens = _canonical_name(k).split()
+            if len(k_tokens) >= 2 and len(k_tokens[0]) == 1:
+                k_initial = k_tokens[0]
+                k_last = k_tokens[-1]
+                if (
+                    len(prop_tokens) >= 2
+                    and prop_tokens[0].startswith(k_initial)
+                    and prop_tokens[-1] == k_last
+                ):
+                    tier3_matches.append(k)
+
+    if len(tier3_matches) == 1:
+        return tier3_matches[0]
+    # 0 or 2+ initial-bridge matches → fall through
+
+    # --- Tier 4: last-name-unique fallback ---
+    if not prop_tokens:
+        return None
+    prop_last = prop_tokens[-1]
+    tier4_matches = [
+        k for k in keys
+        if (lambda kt: kt and kt[-1] == prop_last)(_canonical_name(k).split())
+    ]
+    if len(tier4_matches) == 1:
+        return tier4_matches[0]
+    # 0 or 2+ → abstain
+    return None
 
 
 def american_implied_prob(price: Any) -> float | None:
