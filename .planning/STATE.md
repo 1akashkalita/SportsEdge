@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-14)
 Phase: 05
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-06-21
+Last activity: 2026-06-22 - Completed quick task 260621-ohh: fix send_slips_telegram urllib→requests SSL failure
 
 Progress: [██████████] 100%
 
@@ -91,6 +91,12 @@ None yet.
 
 - CONCERNS.md flags that `python3` is Python 3.14 alpha — a Python upgrade could silently break the runtime; treat interpreter path as a risk during Phase 1 timing analysis
 - No `requirements.txt` or lockfile exists; CI (Phase 5) must pin or document the exact interpreter and deps to be reproducible
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260621-ohh | fix send_slips_telegram urllib→requests SSL failure | 2026-06-22 | 2f245f5 | [260621-ohh-fix-send-slips-telegram-urllib-requests-](./quick/260621-ohh-fix-send-slips-telegram-urllib-requests-/) |
 
 ## Deferred Items
 
