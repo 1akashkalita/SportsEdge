@@ -5103,7 +5103,20 @@ def sync_master_and_bankroll(date: str, newly_graded: list[dict[str, Any]]) -> d
     for sport_label, rows in daily_rows.items():
         for r in rows:
             flat.append({"sport": sport_label, "ref": r.get("Pick Ref"), "result": r.get("Result"), "units": r.get("Units"), "pnl": r.get("PnL"), "note": r.get("Notes"), "actual": r.get("Actual"), "platform": r.get("Platform") or ""})
-    day_pnl = round(sum(float(to_float(r.get("pnl")) or 0) for r in flat), 3)
+    prop_day_pnl = round(sum(float(to_float(r.get("pnl")) or 0) for r in flat), 3)
+    # WR-04: Source Obsidian day_pnl from the slip-sourced Daily Log row for today
+    # (tagged Sport="SLIPS" by sync_slip_bankroll) so the dashboard figure reconciles
+    # with the running bankroll.  Fall back to prop-era row PnL when no slip row exists.
+    slip_day_pnl: float | None = None
+    if "Daily Log" in wb.sheetnames:
+        dl = wb["Daily Log"]
+        for _r in range(2, dl.max_row + 1):
+            _dl_date = str(dl.cell(_r, 1).value or "")[:10]
+            _dl_sport = str(dl.cell(_r, 2).value or "")
+            if _dl_date == date and _dl_sport == "SLIPS":
+                slip_day_pnl = float(to_float(dl.cell(_r, 7).value) or 0)
+                break
+    day_pnl = slip_day_pnl if slip_day_pnl is not None else prop_day_pnl
     obsidian_update_results_section("nba", [r for r in flat if r["sport"] == "NBA"], date, current, sum(float(to_float(r.get("pnl")) or 0) for r in flat if r["sport"] == "NBA"), None)
     obsidian_update_results_section("mlb", [r for r in flat if r["sport"] == "MLB"], date, current, sum(float(to_float(r.get("pnl")) or 0) for r in flat if r["sport"] == "MLB"), None)
     obsidian_update_bankroll_files(date, bankroll, flat, current, roi, day_pnl)
@@ -5146,7 +5159,16 @@ def sync_slip_bankroll(
     date_col = _SHH.index("Date") + 1
     net_pnl_col = _SHH.index("Net PnL") + 1
     recon_col = _SHH.index("Needs Payout Reconciliation") + 1
+    stake_units_col = _SHH.index("Stake Units") + 1  # WR-05
+    slip_result_col = _SHH.index("Slip Result") + 1  # WR-06
     daily_slips: list[float] = []
+    day_stake = 0.0  # WR-05: total stake for the day (to populate Units Bet in Daily Log)
+    # WR-06: accumulate slip W/L/P/units/PnL for Performance Breakdown
+    slip_wins = 0
+    slip_losses = 0
+    slip_pushes = 0
+    slip_units_pb = 0.0
+    slip_pnl_pb = 0.0
     if sh is not None:
         for row_idx in range(2, sh.max_row + 1):
             row_date = str(sh.cell(row_idx, date_col).value or "")[:10]
@@ -5155,9 +5177,23 @@ def sync_slip_bankroll(
             needs_recon = sh.cell(row_idx, recon_col).value
             if needs_recon is True or str(needs_recon or "").strip().upper() == "TRUE":
                 continue  # D-13: exclude PENDING/MANUAL REVIEW slips
-            daily_slips.append(float(to_float(sh.cell(row_idx, net_pnl_col).value) or 0))
+            net_pnl_val = float(to_float(sh.cell(row_idx, net_pnl_col).value) or 0)
+            stake_val = float(to_float(sh.cell(row_idx, stake_units_col).value) or 0)  # WR-05
+            result_val = str(sh.cell(row_idx, slip_result_col).value or "").upper()  # WR-06
+            daily_slips.append(net_pnl_val)
+            day_stake += stake_val  # WR-05
+            # WR-06: tally for Performance Breakdown
+            slip_units_pb += stake_val
+            slip_pnl_pb += net_pnl_val
+            if net_pnl_val > 0 and result_val == "GRADED":
+                slip_wins += 1
+            elif net_pnl_val < 0 and result_val == "GRADED":
+                slip_losses += 1
+            elif result_val == "GRADED":
+                slip_pushes += 1
 
     day_pnl = round(sum(daily_slips), 6)
+    day_stake = round(day_stake, 6)  # WR-05
 
     # --- Wipe + rebuild Daily Log and Bankroll Chart Data for this date (idempotent) ---
     if not dry_run:
@@ -5165,7 +5201,8 @@ def sync_slip_bankroll(
             if sheet_name in wb.sheetnames:
                 remove_rows_for_date(wb[sheet_name], date)
         if "Daily Log" in wb.sheetnames:
-            wb["Daily Log"].append([date, "SLIPS", None, None, None, None, day_pnl, "", "slip bankroll sync"])
+            # WR-05: populate Units Bet (index 5) with day_stake so units-based ROI is real.
+            wb["Daily Log"].append([date, "SLIPS", None, None, None, day_stake, day_pnl, "", "slip bankroll sync"])
 
     # --- Sum ALL Daily Log rows to compute running balance ---
     try:
@@ -5174,10 +5211,8 @@ def sync_slip_bankroll(
         bankroll = {}
     starting = float(bankroll.get("starting_bankroll", 100) or 100)
     total_profit = 0.0
-    total_units = 0.0
     if not dry_run and "Daily Log" in wb.sheetnames:
         for vals in wb["Daily Log"].iter_rows(min_row=2, values_only=True):
-            total_units += float(to_float(vals[5] if len(vals) > 5 else 0) or 0)
             total_profit += float(to_float(vals[6] if len(vals) > 6 else 0) or 0)
     else:
         # dry_run: estimate from existing Daily Log rows (not yet rewritten) + today's day_pnl
@@ -5186,17 +5221,20 @@ def sync_slip_bankroll(
                 row_date = str(vals[0] or "")[:10] if vals else ""
                 if row_date == date:
                     continue  # skip today (would be replaced by our new row)
-                total_units += float(to_float(vals[5] if len(vals) > 5 else 0) or 0)
                 total_profit += float(to_float(vals[6] if len(vals) > 6 else 0) or 0)
         total_profit += day_pnl  # add today's slip PnL
 
     current = round(starting + total_profit, 3)
-    roi = round((total_profit / total_units) * 100, 2) if total_units else 0
+    # WR-05: Align ROI with rebuild_slip_bankroll: profit-on-starting-bankroll definition.
+    # Do NOT use units-based ROI (which was permanently 0 because Units Bet was None).
+    roi = round(((current - starting) / starting) * 100, 2) if starting else 0
 
     bankroll.update({
         "starting_bankroll": starting,
         "current_bankroll": current,
-        "total_units_bet_lifetime": round(total_units, 3),
+        "total_units_bet_lifetime": round(
+            float(bankroll.get("total_units_bet_lifetime") or 0) + day_stake, 3
+        ),
         "overall_profit_loss": round(total_profit, 3),
         "roi_percentage_current": roi,
         "last_graded_date": date,
@@ -5213,9 +5251,37 @@ def sync_slip_bankroll(
         # Append Bankroll Chart Data row
         if "Bankroll Chart Data" in wb.sheetnames:
             wb["Bankroll Chart Data"].append([date, current, roi, now_iso()])
-        # Refresh Performance Breakdown (slip-aware: graded_rows=[] because slip grading is tracked separately)
+        # WR-06: Compute slip W/L/P from ALL Slip History rows (not just today's)
+        # so Performance Breakdown reflects the full slip history — not zeros.
         if "Performance Breakdown" in wb.sheetnames:
-            refresh_performance_breakdown(wb, bankroll, [])
+            all_slip_wins = 0
+            all_slip_losses = 0
+            all_slip_pushes = 0
+            all_slip_units = 0.0
+            all_slip_pnl = 0.0
+            if sh is not None:
+                for row_idx in range(2, sh.max_row + 1):
+                    needs_recon_v = sh.cell(row_idx, recon_col).value
+                    if needs_recon_v is True or str(needs_recon_v or "").strip().upper() == "TRUE":
+                        continue
+                    net_v = float(to_float(sh.cell(row_idx, net_pnl_col).value) or 0)
+                    stake_v = float(to_float(sh.cell(row_idx, stake_units_col).value) or 0)
+                    result_v = str(sh.cell(row_idx, slip_result_col).value or "").upper()
+                    all_slip_units += stake_v
+                    all_slip_pnl += net_v
+                    if net_v > 0 and result_v == "GRADED":
+                        all_slip_wins += 1
+                    elif net_v < 0 and result_v == "GRADED":
+                        all_slip_losses += 1
+                    elif result_v == "GRADED":
+                        all_slip_pushes += 1
+            # Build synthetic graded_rows that refresh_performance_breakdown understands.
+            _pb_rows: list[dict[str, Any]] = (
+                [{"result": "WIN", "units": 1, "pnl": 0}] * all_slip_wins
+                + [{"result": "LOSS", "units": 1, "pnl": 0}] * all_slip_losses
+                + [{"result": "PUSH", "units": 1, "pnl": 0}] * all_slip_pushes
+            )
+            refresh_performance_breakdown(wb, bankroll, _pb_rows)
         # Save workbook BEFORE writing bankroll.json (T-03-08: atomic write ordering)
         if master is not None:
             save_workbook_atomic(wb, master)
@@ -5444,6 +5510,8 @@ def rebuild_slip_bankroll(
     current_bankroll = 100.0
     slips_restaked = 0
     slips_skipped = 0
+    slips_missing_signal = 0   # WR-02: non-reconciliation rows with no JSON signal
+    slips_flipped_to_review = 0  # IN-02: rows that newly flip to MANUAL REVIEW during rebuild
     last_graded_date: str | None = None
 
     for d in all_dates:
@@ -5475,6 +5543,17 @@ def rebuild_slip_bankroll(
             # Pitfall 2: Get combined_probability + combined_ev_score from slip JSON signals.
             # If the slip JSON is missing for this date, fall back to 0 (stake=0, no bet).
             signals = slip_signals.get(slip_id, {})
+            if not signals:
+                # WR-02: surface missing signal so the operator knows a missing/renamed
+                # JSON file is silently zeroing a genuine win.  No behavior change — the
+                # no-signal -> no-bet contract (D-13/Pitfall-2) is preserved.
+                slips_missing_signal += 1
+                print(
+                    f"[rebuild_slip_bankroll] WR-02 WARNING: no JSON signal for slip_id "
+                    f"{slip_id!r} on {d} — stake forced to 0 (no bet). "
+                    "Check that the slips_<date>.json file exists and contains this slip.",
+                    flush=True,
+                )
             prob = float(signals.get("combined_probability") or 0)
             ev = float(signals.get("combined_ev_score") or 0)
 
@@ -5499,6 +5578,15 @@ def rebuild_slip_bankroll(
                 actual_payout_multiplier=actual_mult,
             )
 
+            # IN-02: If re-derivation caused a previously-graded slip to now require
+            # MANUAL REVIEW (e.g. special-line slip without actual multiplier), track it
+            # separately so it is not counted in slips_restaked.
+            if payout.get("needs_payout_reconciliation"):
+                slips_flipped_to_review += 1
+                # Do NOT add to date_slips — this slip contributes 0 and should not be
+                # counted in slips_restaked (IN-02).
+                continue
+
             # Build graded slip dict for write_slip_history_rows.
             # The `legs` list drives `slip_history_row`'s `Number of Legs = len(legs)`
             # and the Legs text column.  Use the Slip History row's total_legs as the
@@ -5506,6 +5594,8 @@ def rebuild_slip_bankroll(
             # partial data).  Build a minimal synthetic list of length=total_legs; the
             # Legs text column will be rewritten from this, which is acceptable because
             # we only need to preserve the three financial columns (D-12).
+            # WR-03: Contains Demon / Contains Goblin / Special Line Count are preserved
+            # by write_slip_history_rows on upsert (the synthetic legs carry no line_type).
             legs_from_signals = signals.get("legs") or []
             if len(legs_from_signals) != total_legs:
                 # Pad/truncate to match Slip History total_legs so that
@@ -5575,6 +5665,8 @@ def rebuild_slip_bankroll(
             "dates_processed": len(all_dates),
             "slips_restaked": slips_restaked,
             "slips_skipped": slips_skipped,
+            "slips_missing_signal": slips_missing_signal,   # WR-02
+            "slips_flipped_to_review": slips_flipped_to_review,  # IN-02
             "dry_run": True,
             "bankroll": bankroll_dict,
         }
@@ -5593,6 +5685,8 @@ def rebuild_slip_bankroll(
         "dates_processed": len(all_dates),
         "slips_restaked": slips_restaked,
         "slips_skipped": slips_skipped,
+        "slips_missing_signal": slips_missing_signal,   # WR-02
+        "slips_flipped_to_review": slips_flipped_to_review,  # IN-02
         "dry_run": False,
         "bankroll": bankroll_dict,
     }
@@ -7135,6 +7229,35 @@ def task_workbook_locks(task: str):
             cm.__exit__(None, None, None)
 
 
+def _grade_slips_then_sync(date: str) -> dict[str, Any]:
+    """Grade today's slips via grade_slips_for_date, then advance the slip bankroll.
+
+    CR-01 fix: the forward daily path MUST call sync_slip_bankroll(date) after
+    grading so that bankroll.json / Daily Log Running Bankroll / Bankroll Chart
+    Data are updated from Slip History on every scheduled run — not only after a
+    manual rebuild_bankroll invocation.
+
+    Returns the grade_slips summary merged with a 'slip_bankroll' key containing
+    the sync_slip_bankroll result.
+    """
+    _grade_slips = __import__("grade_slips")
+    summary = _grade_slips.grade_slips_for_date(date)
+    # Only advance the bankroll when grading produced actual rows (or at least
+    # a slip file was present); if there is no slip file today we still sync so
+    # that the Daily Log / bankroll.json remain up to date.
+    try:
+        slip_bankroll_result = sync_slip_bankroll(date)
+    except Exception as exc:  # noqa: BLE001
+        # Non-fatal: log but don't crash the task (matches Telegram-failure contract)
+        print(
+            f"[_grade_slips_then_sync] sync_slip_bankroll({date!r}) failed: {exc}",
+            flush=True,
+        )
+        slip_bankroll_result = {"error": str(exc)}
+    summary["slip_bankroll"] = slip_bankroll_result
+    return summary
+
+
 def run_task(task: str) -> dict[str, Any]:
     mapping = {
         "nba_daily_picks": lambda: daily_picks("nba"),
@@ -7148,9 +7271,9 @@ def run_task(task: str) -> dict[str, Any]:
         "check_results": check_results,
         "game_completion_monitor": game_completion_monitor,
         "verify": verify,
-        # grade_slips: grades today's slips and persists idempotent Slip History rows.
-        # Imported lazily to keep the runner importable even if grade_slips is absent.
-        "grade_slips": lambda: __import__("grade_slips").grade_slips_for_date(today_str()),
+        # grade_slips: grades today's slips and persists idempotent Slip History rows,
+        # then advances the slip-sourced bankroll ledger (CR-01).
+        "grade_slips": lambda: _grade_slips_then_sync(today_str()),
         # rebuild_bankroll: one-time manual task — re-stakes all Slip History rows from
         # 2026-06-08 and rebuilds the bankroll ledger.  NOT added to cron schedule.
         "rebuild_bankroll": lambda: rebuild_slip_bankroll(),
