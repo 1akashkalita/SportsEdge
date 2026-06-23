@@ -1182,13 +1182,23 @@ def skipped_picks_summary_for_date(date: str) -> tuple[int, str]:
                 if "Skipped Picks" not in wb.sheetnames:
                     continue
                 ws = wb["Skipped Picks"]
-                headers = {str(ws.cell(1, c).value or "").strip(): c for c in range(1, ws.max_column + 1)}
-                result_col = headers.get("Result", 7)
-                for r in range(2, ws.max_row + 1):
-                    if str(ws.cell(r, 1).value or "")[:10] != date:
+                # Single streaming pass. ws.cell() on a read-only sheet re-parses the
+                # whole sheet XML on every call (O(n^2)); iter_rows reads it once.
+                # (quick 260623-lzi — recap/alert path was hanging at ~1.5k rows)
+                rows = ws.iter_rows(values_only=True)
+                try:
+                    header_row = next(rows)
+                except StopIteration:
+                    continue
+                headers = {str(v or "").strip(): i for i, v in enumerate(header_row)}
+                result_idx = headers.get("Result", 6)  # 0-based; was 1-based default 7
+                for row in rows:
+                    if not row:
+                        continue
+                    if str(row[0] or "")[:10] != date:
                         continue
                     total += 1
-                    result = str(ws.cell(r, result_col).value or "").upper()
+                    result = str((row[result_idx] if result_idx < len(row) else "") or "").upper()
                     if result in {"WIN", "WON", "W"}:
                         wins += 1
                     elif result in {"LOSS", "LOST", "L"}:
