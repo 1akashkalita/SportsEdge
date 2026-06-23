@@ -132,6 +132,9 @@ TASK_TIMEOUTS: dict[str, int] = {
     # grade_slips fetches ESPN box scores for each date; must not hit the 60 s
     # default that would SIGALRM-kill mid-ESPN-fetch.  660 s matches all other tasks.
     "grade_slips": 660,
+    # rebuild_bankroll is a one-time manual task; 660 s stays comfortably below
+    # the 720 s Hermes hard-kill while allowing for large Slip History rewrites.
+    "rebuild_bankroll": 660,
 }
 
 
@@ -7100,6 +7103,10 @@ def task_workbook_paths(task: str) -> list[Path]:
     # acquire cooperative locks on all three to prevent races with daily_picks/check_results.
     if task == "grade_slips":
         return [workbook_path("nba", date), workbook_path("mlb", date), PNL_DIR / "master_pnl.xlsx"]
+    # rebuild_bankroll is a one-time manual task that writes only the master P&L ledger;
+    # hold the cooperative lock so it cannot race grade_slips or check_results.
+    if task == "rebuild_bankroll":
+        return [PNL_DIR / "master_pnl.xlsx"]
     return [workbook_path(sport, date)] if sport else []
 
 
@@ -7134,6 +7141,9 @@ def run_task(task: str) -> dict[str, Any]:
         # grade_slips: grades today's slips and persists idempotent Slip History rows.
         # Imported lazily to keep the runner importable even if grade_slips is absent.
         "grade_slips": lambda: __import__("grade_slips").grade_slips_for_date(today_str()),
+        # rebuild_bankroll: one-time manual task — re-stakes all Slip History rows from
+        # 2026-06-08 and rebuilds the bankroll ledger.  NOT added to cron schedule.
+        "rebuild_bankroll": lambda: rebuild_slip_bankroll(),
     }
     if task not in mapping:
         raise SystemExit(f"Unknown task: {task}")
