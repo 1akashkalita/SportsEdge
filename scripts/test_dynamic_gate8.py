@@ -55,26 +55,30 @@ def cand(i, sport="NBA", tier="A", ev=0.4, prob=0.65, units=None, player=None, g
 
 
 def allocate(items):
-    return runner.allocate_eligible_candidates([dict(x) for x in items], starting_exposure=0.0, daily_cap=None)
+    return runner.allocate_eligible_candidates([dict(x) for x in items], starting_exposure=0.0)
 
 
 def approved_keys(res):
     return [p["selection"] for p in res["picks"]]
 
 
-def test_normal_board_stays_10u():
+def test_normal_board_no_dynamic_cap_skip():
+    """After D-07, Normal board still classifies correctly; no dynamic-cap skip rows."""
     res = allocate([cand(i, tier="B", ev=0.15, prob=0.55) for i in range(4)])
     assert res["board_quality"] == "Normal"
-    assert res["dynamic_daily_cap"] == 10.0
-    assert res["global_exposure"] <= 10.0
+    assert res["dynamic_daily_cap"] is None
+    dynamic_skips = [s for s in res["skipped"] if "DYNAMIC EXPOSURE CAP" in (s.get("gate_failed") or "")]
+    assert dynamic_skips == [], f"Expected no dynamic-cap skips; got: {dynamic_skips}"
 
 
-def test_strong_board_increases_to_12u():
+def test_strong_board_no_dynamic_cap_skip():
+    """After D-07, Strong board still classifies correctly; picks are no longer capped at 12u."""
     items = [cand(i, tier="A", ev=0.30, prob=0.61, sport="NBA" if i < 3 else "MLB") for i in range(5)]
     res = allocate(items)
     assert res["board_quality"] == "Strong"
-    assert res["dynamic_daily_cap"] == 12.0
-    assert res["global_exposure"] <= 12.0
+    assert res["dynamic_daily_cap"] is None
+    dynamic_skips = [s for s in res["skipped"] if "DYNAMIC EXPOSURE CAP" in (s.get("gate_failed") or "")]
+    assert dynamic_skips == [], f"Expected no dynamic-cap skips on Strong board; got: {dynamic_skips}"
 
 
 def test_concentration_fields_are_explicitly_named_and_split_by_pool_vs_final():
@@ -93,19 +97,33 @@ def test_concentration_fields_are_explicitly_named_and_split_by_pool_vs_final():
     assert res["final_approved_max_sport_concentration"] == 0.5
 
 
-def test_exceptional_board_increases_to_15u():
+def test_exceptional_board_no_dynamic_cap_skip():
+    """After D-07, Exceptional board still classifies correctly; picks are no longer capped at 15u."""
     items = [cand(i, tier="A" if i < 5 else "B", ev=0.42, prob=0.66, sport="NBA" if i % 2 else "MLB", game=f"game-{i}", team=f"T{i}") for i in range(7)]
     res = allocate(items)
     assert res["board_quality"] == "Exceptional"
-    assert res["dynamic_daily_cap"] == 15.0
-    assert res["global_exposure"] <= 15.0
+    assert res["dynamic_daily_cap"] is None
+    dynamic_skips = [s for s in res["skipped"] if "DYNAMIC EXPOSURE CAP" in (s.get("gate_failed") or "")]
+    assert dynamic_skips == [], f"Expected no dynamic-cap skips on Exceptional board; got: {dynamic_skips}"
 
 
-def test_no_board_can_exceed_15u():
+def test_no_dynamic_cap_skip_rows_after_removal():
+    """After D-07, no pick is skipped with GATE 8 — DYNAMIC EXPOSURE CAP regardless of board size."""
     items = [cand(i, tier="A", ev=0.7, prob=0.75, sport="NBA" if i % 2 else "MLB", game=f"game-{i}", team=f"T{i}") for i in range(12)]
     res = allocate(items)
-    assert res["dynamic_daily_cap"] <= 15.0
-    assert res["global_exposure"] <= 15.0
+    assert res["dynamic_daily_cap"] is None
+    dynamic_skips = [s for s in res["skipped"] if "DYNAMIC EXPOSURE CAP" in (s.get("gate_failed") or "")]
+    assert dynamic_skips == [], f"Expected no dynamic-cap skips; got: {dynamic_skips}"
+
+
+def test_concentration_caps_still_block_overexposure():
+    """D-07 removes the global dynamic cap; concentration caps remain intact and still block overexposure."""
+    items = [cand(i, tier="A", ev=0.5, prob=0.7, player="Same Player", game=f"game-{i}") for i in range(4)]
+    res = allocate(items)
+    assert res["picks_blocked_by_concentration_cap"] >= 1, "Expected concentration cap to block at least one pick"
+    # Dynamic cap must be absent
+    dynamic_skips = [s for s in res["skipped"] if "DYNAMIC EXPOSURE CAP" in (s.get("gate_failed") or "")]
+    assert dynamic_skips == [], f"No dynamic-cap skips expected; got: {dynamic_skips}"
 
 
 def test_correlated_picks_alone_cannot_trigger_exceptional():
@@ -135,7 +153,9 @@ def test_order_independent_for_nba_first_vs_mlb_first():
     assert a == b
 
 
-def test_higher_ev_cross_sport_replaces_lower_ev_under_cap():
+def test_higher_ev_approved_first_and_all_pass_without_cap():
+    """After D-07, all eligible picks are approved (no global cap to exclude lower-EV picks).
+    EV-ordering still governs selection priority but no picks are blocked by a daily cap."""
     items = [
         cand(1, sport="NBA", tier="A", ev=0.10, prob=0.61, game="g1", team="N1"),
         cand(2, sport="NBA", tier="A", ev=0.20, prob=0.62, game="g2", team="N2"),
@@ -144,8 +164,11 @@ def test_higher_ev_cross_sport_replaces_lower_ev_under_cap():
     ]
     res = allocate(items)
     keys = approved_keys(res)
+    # All 4 picks are now approved — no global cap to block any of them
     assert "Player 4 Over 14.5 Points" in keys
-    assert "Player 1 Over 11.5 Points" not in keys
+    assert "Player 1 Over 11.5 Points" in keys
+    assert len(keys) == 4
+    assert res["picks_blocked_by_dynamic_cap"] == 0
 
 
 class PropDataSourceBoundaryTests(unittest.TestCase):
