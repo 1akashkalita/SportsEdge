@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-22)
 Phase: 2 (Slip Reconstruction and Grading) — EXECUTING
 Plan: 3 of 3
 Status: Ready to execute
-Last activity: 2026-06-22
+Last activity: 2026-06-22 - Completed quick task 260622-p7x: trustworthy, platform-specific slip generation
 
 Progress: [████████░░] 78%
 
@@ -96,6 +96,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260621-ohh | fix send_slips_telegram urllib→requests SSL failure | 2026-06-22 | 2f245f5 | [260621-ohh-fix-send-slips-telegram-urllib-requests-](./quick/260621-ohh-fix-send-slips-telegram-urllib-requests-/) |
+| 260622-p7x | Slip generation: vetted-only legs (APPROVED + Gate-8 cap-held), single-platform, real Underdog/PrizePicks labels, dedup | 2026-06-22 | 0d6fded | [260622-p7x-slips-vetted-per-platform](./quick/260622-p7x-slips-vetted-per-platform/) |
 
 ## Deferred Items
 
