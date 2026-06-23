@@ -135,6 +135,12 @@ TASK_TIMEOUTS: dict[str, int] = {
     # rebuild_bankroll is a one-time manual task; 660 s stays comfortably below
     # the 720 s Hermes hard-kill while allowing for large Slip History rewrites.
     "rebuild_bankroll": 660,
+    # weekly_metrics: read-only aggregation + 1 JSON write + Telegram + Obsidian sync.
+    # Wall-clock estimate: 15–45 s (well under 660 s).  D-02 / D-12.
+    # NOTE: the cron schedule entry (Monday morning) must be added by the operator in
+    # ~/.hermes — it is outside this repo.  Example:
+    #   0 8 * * MON cd /path/to/sports_picks/scripts && python3 sports_system_runner.py --task weekly_metrics
+    "weekly_metrics": 660,
 }
 
 
@@ -7211,6 +7217,10 @@ def task_workbook_paths(task: str) -> list[Path]:
     # hold the cooperative lock so it cannot race grade_slips or check_results.
     if task == "rebuild_bankroll":
         return [PNL_DIR / "master_pnl.xlsx"]
+    # weekly_metrics reads master_pnl.xlsx (read-only) and writes calibration.json (not a
+    # workbook); hold the cooperative lock so it cannot race grade_slips / check_results.
+    if task == "weekly_metrics":
+        return [PNL_DIR / "master_pnl.xlsx"]
     return [workbook_path(sport, date)] if sport else []
 
 
@@ -7258,6 +7268,100 @@ def _grade_slips_then_sync(date: str) -> dict[str, Any]:
     return summary
 
 
+def weekly_metrics_task() -> dict[str, Any]:
+    """Aggregate dual metrics (slip ROI + prop hit-rate) and recompute calibration.
+
+    D-01: Delivers the weekly report to BOTH Telegram AND Obsidian.
+    D-02: Standalone task — operator must add a Monday-morning cron entry in
+          ~/.hermes (outside this repo) pointing to:
+            cd <scripts_dir> && python3 sports_system_runner.py --task weekly_metrics
+    D-12: Calibration recompute runs inside this same task (one task, two logical phases).
+    D-13: This task never touches graded verdicts, Results/Pick History sheets, or
+          evaluate_no_bet_gates.  Calibration writes only calibration.json; sigma
+          injection is upstream of the gate gauntlet.
+
+    Returns a dict {status, weeks, sports, calibration, telegram_sent, obsidian_sent}.
+    Never raises — defensive SKIP on any missing data (matching task contract).
+    """
+    # Lazy imports mirror _grade_slips_then_sync pattern — no import-time coupling.
+    _calibration = __import__("calibration")
+    _metrics_report = __import__("metrics_report")
+
+    result: dict[str, Any] = {
+        "status": "ok",
+        "weeks": 0,
+        "sports": [],
+        "calibration": {},
+        "telegram_sent": False,
+        "obsidian_sent": False,
+    }
+
+    # --- 1. Aggregate metrics report (read-only) ---
+    try:
+        roi_agg = _metrics_report.aggregate_slip_roi_by_week_sport()
+        prop_rates = _metrics_report.read_prop_hit_rate_by_week_sport()
+        report = _metrics_report.build_weekly_report(roi_agg, prop_rates)
+        result["weeks"] = len({r["iso_week"] for r in report.get("rows", [])})
+        result["sports"] = sorted({r["sport"] for r in report.get("rows", [])})
+    except Exception as exc:  # noqa: BLE001
+        log(f"[weekly_metrics] report aggregation failed: {exc}")
+        report = {"rows": [], "latest_week": "—", "total_zero_stake": 0, "generated_at": ""}
+        result["status"] = "partial"
+
+    # --- 2. Recompute calibration (D-12) ---
+    cal_summary: dict[str, Any] = {}
+    calibration_note = ""
+    try:
+        cal_summary = _calibration.compute_and_update_calibration()
+        result["calibration"] = cal_summary
+        # Build human-readable calibration note for Obsidian Adjustments section (D-13 audit)
+        note_parts: list[str] = ["**Calibration Update:**"]
+        for audit in cal_summary.get("audits", []):
+            sport_label = audit.get("sport", "?")
+            prev = audit.get("prev_factor", 1.0)
+            new_f = audit.get("new_factor", 1.0)
+            n = audit.get("n_with_mop") or audit.get("n_outcomes", 0)
+            reason = audit.get("reason", "—")
+            note_parts.append(
+                f"- {sport_label}: {prev:.4f} → {new_f:.4f} (n={n}, {reason})"
+            )
+        calibration_note = "\n".join(note_parts)
+    except Exception as exc:  # noqa: BLE001
+        log(f"[weekly_metrics] calibration recompute failed (non-blocking): {exc}")
+        result["status"] = "partial"
+        calibration_note = "*Calibration recompute failed this cycle — see run log.*"
+
+    # --- 3. Deliver to Telegram (D-01) ---
+    try:
+        digest = _metrics_report.format_telegram_digest(report)
+        if calibration_note:
+            digest = digest + "\n\n" + calibration_note
+        result["telegram_sent"] = send_telegram(digest)
+    except Exception as exc:  # noqa: BLE001
+        log(f"[weekly_metrics] Telegram delivery failed (non-blocking): {exc}")
+
+    # --- 4. Deliver to Obsidian via obsidian_sync directly (D-01; bypasses the
+    #        obsidian_create_weekly_recap path.exists guard so re-runs overwrite — Pitfall 5) ---
+    try:
+        markdown = _metrics_report.fill_obsidian_recap_markdown(report, calibration_note)
+        date = today_str()
+        obsidian_sync({
+            "trigger": "check_results",
+            "sport": "NBA",
+            "date": date,
+            "data": {
+                "weekly_recap_date": date,
+                "weekly_recap_markdown": markdown,
+                "skip_standard_check_results": True,
+            },
+        })
+        result["obsidian_sent"] = True
+    except Exception as exc:  # noqa: BLE001
+        log(f"[weekly_metrics] Obsidian delivery failed (non-blocking): {exc}")
+
+    return result
+
+
 def run_task(task: str) -> dict[str, Any]:
     mapping = {
         "nba_daily_picks": lambda: daily_picks("nba"),
@@ -7277,6 +7381,10 @@ def run_task(task: str) -> dict[str, Any]:
         # rebuild_bankroll: one-time manual task — re-stakes all Slip History rows from
         # 2026-06-08 and rebuilds the bankroll ledger.  NOT added to cron schedule.
         "rebuild_bankroll": lambda: rebuild_slip_bankroll(),
+        # weekly_metrics: Monday-morning standalone task — aggregates dual metrics report
+        # (slip ROI + prop hit-rate) and recomputes calibration.  Cron entry must be added
+        # by the operator in ~/.hermes (outside this repo).  D-01 / D-02 / D-12.
+        "weekly_metrics": lambda: weekly_metrics_task(),
     }
     if task not in mapping:
         raise SystemExit(f"Unknown task: {task}")
