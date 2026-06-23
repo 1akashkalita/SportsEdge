@@ -4,7 +4,7 @@ milestone: v2.0
 milestone_name: Slips & Props Tracking
 status: planning
 stopped_at: Phase 04.1 context gathered
-last_updated: "2026-06-23T10:09:09.873Z"
+last_updated: "2026-06-23T10:14:12.305Z"
 last_activity: 2026-06-23 -- inserted Phase 04.1 from v2.0 audit
 progress:
   total_phases: 5
@@ -75,6 +75,7 @@ Progress: [█████████░] 94%
 ### Roadmap Evolution
 
 - Phase 04.1 inserted after Phase 4: Close v2.0 audit gaps (BANKROLL-02 forward staking, daily prop-accuracy refresh, calibration dedup + WR-03, RESULTS-07/SLIPS-03 verification debt) (URGENT)
+- Phase 04.1 edited: set real goal + BANKROLL-02 requirement + 5 success criteria; dropped RESULTS-07/SLIPS-03 verification-debt from title (routed to verify-work)
 
 ### Decisions
 

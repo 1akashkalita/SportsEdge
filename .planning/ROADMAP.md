@@ -138,3 +138,23 @@ Plans:
 | 2. Slip Reconstruction and Grading | v2.0 | 0/3 | Planned | - |
 | 3. Slips-Only Bankroll | v2.0 | 4/4 | Awaiting phase verification | 2026-06-22 |
 | 4. Dual Metrics and Feedback | v2.0 | 0/3 | Planned | - |
+
+### Phase 04.1: Close v2.0 audit gaps — forward confidence staking, daily prop-accuracy refresh, calibration dedup, WR-03 visibility (INSERTED)
+
+**Goal**: The four functional gaps from the v2.0 milestone audit are closed in production — confidence staking is applied live on the daily slip-build path (no more flat `stake_units=1.0`), Prop Accuracy is refreshed on the daily grade path so weekly metrics are never stale, `load_calibration_factor` is de-duplicated to one canonical copy, and a persistent `weekly_metrics` partial is visibly surfaced instead of silently reading green — with no gate-logic or pick-verdict changes, additive-only schema, and every task under the 660s cron budget
+**Depends on**: Phase 4
+**Requirements**: BANKROLL-02
+**Success Criteria** (what must be TRUE):
+
+  1. Forward staking is live: a daily slip build produces real confidence stakes (a high-probability +EV slip gets 2.5% × start-of-day bankroll; a sub-0.58-prob or EV≤0 slip gets 0) and never emits the flat `stake_units=1.0` placeholder when `bankroll.json` is present
+  2. Money-safe fallback: with `bankroll.json` missing or unreadable, the build falls back to `stake_units=1.0` and logs — it never stakes 0 and never crashes; `rebuild_bankroll` remains the authoritative re-stating
+  3. Prop Accuracy is fresh: after a daily grade run the Prop Accuracy sheet reflects the just-graded results, and `weekly_metrics` still opens `master_pnl.xlsx` read-only (no new write lock)
+  4. A persistent `weekly_metrics` partial is visible: a forced partial produces a visibly-degraded Telegram digest and trips the failure-streak/health signal on repeated partials, while a single transient partial does not hard-fail the task
+  5. Calibration is de-duplicated: `load_calibration_factor` resolves identically via `calibration.py` and the now-importing `generate_projections.py`, and the P4 METRICS-03 integrity test still passes (no graded verdict or gate output changes)
+
+**Out of scope** (routed to verify-work): RESULTS-07 and SLIPS-03 verification debt → `/gsd-verify-work 1` and `/gsd-verify-work 2`
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 04.1 to break down)
