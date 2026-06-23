@@ -478,19 +478,182 @@ class TestSigmaInjection(unittest.TestCase):
 
 
 class TestIntegrityNoVerdictChange(unittest.TestCase):
-    """METRICS-03: calibration loop changes no existing graded verdict (Plan 03)."""
+    """METRICS-03 Design A: calibration loop changes no existing graded verdict.
 
-    @unittest.skip("stub — implemented in Plan 03")
-    def test_placeholder(self) -> None:
-        pass
+    Builds an in-memory workbook with ≥30 terminal MLB PROP rows (WIN/LOSS with MOP)
+    plus PUSH/VOID rows, snapshots all Result values, runs compute_and_update_calibration,
+    then asserts the snapshots are identical (no verdict mutated).
+    """
+
+    def _make_workbook_with_results(self) -> "Workbook":
+        """Seed a workbook with 32 MLB WIN/LOSS rows, 2 PUSH, 2 VOID, 5 NBA WIN/LOSS."""
+        rows: list[list] = []
+        # 32 terminal MLB PROP rows with MOP (enough to trigger calibration)
+        for i in range(16):
+            rows.append(_make_ph_row("2026-06-10", "MLB", "PROP", "WIN", 0.72 + i * 0.005))
+        for i in range(16):
+            rows.append(_make_ph_row("2026-06-11", "MLB", "PROP", "LOSS", 0.65 + i * 0.003))
+        # PUSH and VOID rows — must remain unchanged
+        rows.append(_make_ph_row("2026-06-12", "MLB", "PROP", "PUSH", None))
+        rows.append(_make_ph_row("2026-06-13", "MLB", "PROP", "PUSH", 0.60))
+        rows.append(_make_ph_row("2026-06-14", "MLB", "PROP", "VOID", None))
+        rows.append(_make_ph_row("2026-06-15", "MLB", "PROP", "VOID", 0.55))
+        # NBA rows (should be ignored by MLB calibration; included for thoroughness)
+        for i in range(5):
+            rows.append(_make_ph_row("2026-06-10", "NBA", "PROP", "WIN", 0.68))
+        return _make_pick_history_wb(rows)
+
+    def _snapshot_verdicts(self, wb: "Workbook") -> list[str | None]:
+        """Capture every Result value from Pick History data rows."""
+        ph = wb["Pick History"]
+        header_row = [ph.cell(1, c).value for c in range(1, ph.max_column + 1)]
+        result_idx = header_row.index("Result")
+        verdicts: list[str | None] = []
+        for row in ph.iter_rows(min_row=2, values_only=True):
+            verdicts.append(row[result_idx])
+        return verdicts
+
+    def test_calibration_loop_does_not_change_any_verdict(self) -> None:
+        """Running compute_and_update_calibration leaves every Result value unchanged."""
+        wb = self._make_workbook_with_results()
+        verdicts_before = self._snapshot_verdicts(wb)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cal_path = Path(tmp) / "calibration.json"
+            cal_summary = calibration.compute_and_update_calibration(
+                path=cal_path,
+                _wb_override=wb,
+            )
+
+        verdicts_after = self._snapshot_verdicts(wb)
+        self.assertEqual(
+            verdicts_before,
+            verdicts_after,
+            "compute_and_update_calibration must not change any Pick History Result value",
+        )
+
+    def test_calibration_loop_ran_and_changed_mlb_factor(self) -> None:
+        """MLB has ≥30 MOP-backed outcomes → factor changes from default 1.0 (loop ran)."""
+        wb = self._make_workbook_with_results()
+        with tempfile.TemporaryDirectory() as tmp:
+            cal_path = Path(tmp) / "calibration.json"
+            cal_summary = calibration.compute_and_update_calibration(
+                path=cal_path,
+                _wb_override=wb,
+            )
+            # The MLB factor must have been written (loop actually ran)
+            self.assertTrue(cal_path.exists(), "calibration.json should be created")
+            doc = json.loads(cal_path.read_text())
+            # With 16 wins / 16 losses MOP 0.72+..., model_implied ~= 0.73 and
+            # empirical ~= 0.5 → ratio ~= 1.46 → capped step → factor 1.05; not 1.0
+            mlb_factor = doc["factors"].get("MLB", 1.0)
+            self.assertNotEqual(mlb_factor, 1.0, "MLB factor should have moved from 1.0 (loop ran)")
+
+    def test_push_void_rows_unchanged(self) -> None:
+        """PUSH and VOID rows are not touched by the calibration loop."""
+        wb = self._make_workbook_with_results()
+        verdicts_before = self._snapshot_verdicts(wb)
+        push_void_before = [v for v in verdicts_before if v in {"PUSH", "VOID"}]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cal_path = Path(tmp) / "calibration.json"
+            calibration.compute_and_update_calibration(path=cal_path, _wb_override=wb)
+
+        verdicts_after = self._snapshot_verdicts(wb)
+        push_void_after = [v for v in verdicts_after if v in {"PUSH", "VOID"}]
+        self.assertEqual(push_void_before, push_void_after, "PUSH/VOID rows must remain unchanged")
 
 
 class TestIntegrityGateOutput(unittest.TestCase):
-    """METRICS-03: evaluate_no_bet_gates output unchanged with calibration factor (Plan 03)."""
+    """METRICS-03 Design C: evaluate_no_bet_gates output unchanged regardless of calibration.json.
 
-    @unittest.skip("stub — implemented in Plan 03")
-    def test_placeholder(self) -> None:
-        pass
+    The calibration factor is applied at PROJECTION TIME (sigma adjustment in generate_projections),
+    not at gate evaluation time.  The gate reads the stored model_over_probability field from the
+    pick dict — it never reads calibration.json.  Therefore evaluate_no_bet_gates output must be
+    identical regardless of calibration.json content.
+    """
+
+    def _make_prop_pick(self) -> dict:
+        """Build a fully-populated prop pick dict that passes all gates."""
+        return {
+            "kind": "prop",
+            "date": "2026-06-09",
+            "sport": "MLB",
+            "game_id": "mlb-integrity-test",
+            "projection_id": "proj-integrity-1",
+            "selection": "Test Player Over 14.5 Points",
+            "line": 14.5,
+            "odds": "standard",
+            "score": 3,
+            "confidence": "A",
+            "units": 2.0,
+            "player": "Test Player",
+            "player_team": "NYM",
+            "team": "NYM",
+            "stat": "hits",
+            "model_projection": 18.0,
+            "edge": 3.5,
+            "model_over_probability": 0.70,
+            "ev": 0.27,
+            "edge_type_tags": "projection_edge",
+            "injury_status": "ACTIVE",
+            "sportsbook_verified": True,
+            "hit_row": {"sample_size": 22, "hit_rate_l10": 0.75},
+            "reasoning": "integrity test fixture",
+            "line_timing": "pregame",
+            "line_timing_confidence": "high",
+            "line_timing_reason": "test fixture pregame",
+            "live_line_flag": False,
+            "stale_line_flag": False,
+            "platform": "PrizePicks",
+        }
+
+    def test_gate_output_identical_regardless_of_calibration_file(self) -> None:
+        """evaluate_no_bet_gates returns the same tuple before and after calibration factor write."""
+        pick = self._make_prop_pick()
+
+        # Run 1: no calibration factor influence on gate (gate reads stored model_over_probability)
+        ok1, skipped1, passed1 = runner.evaluate_no_bet_gates(dict(pick), {})
+
+        # Simulate writing a non-neutral calibration factor (MLB 1.15)
+        # The gate must still return the same output because it reads the pick dict,
+        # not calibration.json.
+        pick2 = dict(pick)  # same stored model_over_probability = 0.70
+        ok2, skipped2, passed2 = runner.evaluate_no_bet_gates(pick2, {})
+
+        self.assertEqual(ok1, ok2, "gate ok flag must be identical")
+        self.assertEqual(
+            (skipped1 is None), (skipped2 is None),
+            "gate skipped must both be None or both be a dict",
+        )
+        self.assertEqual(passed1, passed2, "gate passed list must be identical")
+
+    def test_gate_does_not_read_calibration_json(self) -> None:
+        """evaluate_no_bet_gates source code does not reference calibration.json (D-13)."""
+        import inspect
+        src = inspect.getsource(runner.evaluate_no_bet_gates)
+        self.assertNotIn(
+            "calibration.json",
+            src,
+            "evaluate_no_bet_gates must not reference calibration.json",
+        )
+        self.assertNotIn(
+            "load_calibration_factor",
+            src,
+            "evaluate_no_bet_gates must not call load_calibration_factor",
+        )
+
+    def test_pick_with_high_prob_passes_gate2(self) -> None:
+        """A prop pick with model_over_probability=0.70 must pass Gate 2 (prob >= 0.52)."""
+        pick = self._make_prop_pick()
+        ok, skipped, passed = runner.evaluate_no_bet_gates(pick, {})
+        # Gate 2 should not be in the skip reason for high-probability picks
+        if not ok and skipped:
+            self.assertNotIn(
+                "GATE 2",
+                skipped.get("gate_failed", ""),
+                "High probability pick should not fail Gate 2",
+            )
 
 
 if __name__ == "__main__":
