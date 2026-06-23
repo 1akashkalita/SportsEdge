@@ -19,6 +19,7 @@ from typing import Any
 
 import analyze_prop_correlation as corr
 from slip_payouts import payout_multiplier
+from stake_sizing import apply_confidence_stakes
 
 ROOT = Path(__file__).resolve().parents[1]
 SLIP_DIR = ROOT / "data" / "research" / "slips"
@@ -645,6 +646,33 @@ def main() -> int:
 
     correlation_payload = load_correlations(date)
     payload = build_slips(projections, correlation_payload, date, vetted_source=vetted_source)
+
+    # D-04: read start-of-day bankroll; fall back to stake_units=1.0 on any failure
+    # (never crash, never stake 0 when bankroll is unknown — D-04 literal fallback).
+    bankroll_path = ROOT / "data" / "pnl" / "bankroll.json"
+    start_of_day_bankroll: float | None = None
+    try:
+        if bankroll_path.exists():
+            bk = json.loads(bankroll_path.read_text(encoding="utf-8"))
+            raw = float(bk.get("current_bankroll") or 0)
+            if raw > 0:
+                start_of_day_bankroll = raw
+            else:
+                print("[build_slips] WARNING: bankroll.json current_bankroll <= 0; using fallback stake_units=1.0")
+        else:
+            print("[build_slips] WARNING: bankroll.json not found; using fallback stake_units=1.0")
+    except Exception as exc:
+        print(f"[build_slips] WARNING: bankroll.json read failed ({exc}); using fallback stake_units=1.0")
+
+    if start_of_day_bankroll is not None:
+        # D-01: apply stakes per category — payload["slips"] is dict[str, list], NOT a flat list
+        staked_slips: dict[str, list[dict[str, Any]]] = {}
+        for category, slip_list in payload["slips"].items():
+            staked_slips[category] = apply_confidence_stakes(slip_list, start_of_day_bankroll)
+        payload["slips"] = staked_slips
+    # else: leave stake_units=1.0 as set by make_slip (D-04 literal fallback —
+    # do NOT call apply_confidence_stakes(slips, 1.0), which would yield 0.025)
+
     json_path, md_path = write_outputs(payload, date)
     print(json.dumps({
         "status": "ok",
