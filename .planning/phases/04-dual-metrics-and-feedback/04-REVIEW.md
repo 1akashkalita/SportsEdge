@@ -13,9 +13,12 @@ files_reviewed_list:
 findings:
   critical: 0
   warning: 3
+  warning_resolved: 2
+  warning_open: 1
   info: 4
   total: 7
 status: issues_found
+resolution_note: "WR-01 and WR-02 resolved 2026-06-23 (commits 2cc74dc RED, eb6efcf GREEN; adversarially verified). WR-03 and Info items remain open by operator choice."
 ---
 
 # Phase 4: Code Review Report
@@ -42,6 +45,8 @@ The defects below are correctness/quality issues in the new calibration math and
 
 ### WR-01: Calibration gate and empirical hit-rate use a different population than `model_implied`
 
+**✅ RESOLVED 2026-06-23** (commit eb6efcf) — `read_graded_outcomes_for_sport` now tallies wins/losses only for MOP-backed rows (`wins+losses == n_with_mop`), `compute_calibration_target` gates on `n_with_mop`, and `empirical`/`model_implied` share the denominator. Added informational `n_total_graded` counter (non-gating). Adversarially verified: 30 graded rows / 3 MOP → factor stays 1.0 (gate not met: n=3 < 30).
+
 **File:** `scripts/calibration.py:68-98` (gate at line 72; empirical at line 81; model_implied at line 93)
 **Issue:** The function docstring (line 56) states `n_gate: minimum MOP-backed outcomes required before factor moves`, but the implementation gates on `n_outcomes = wins + losses` (line 72), not `n_with_mop = len(mop_values)`. Worse, `empirical` (line 81) is computed over *all* WIN/LOSS rows, while `model_implied` (line 93) is computed over *only* the MOP-backed subset. When not every graded PROP row carries a `Model Over Probability` (which is not guaranteed — the upsert at `sports_system_runner.py:4826` only populates MOP `or` from source, and it can be `None`), the two populations diverge and `raw_ratio = model_implied / empirical` becomes a biased estimate that still moves the real-money sigma factor.
 
@@ -57,6 +62,8 @@ if n_eff < n_gate:
 Track wins/losses only for rows where MOP is present, so `empirical` and `model_implied` share a denominator.
 
 ### WR-02: `compute_and_update_calibration` docstring claims idempotence it does not have
+
+**✅ RESOLVED 2026-06-23** (commit eb6efcf) — added a per-sport data-fingerprint `(wins, losses, n_with_mop)` persisted in `calibration.json`; `compute_and_update_calibration` skips stepping when the fingerprint is unchanged. Docstring corrected. Adversarially verified: identical-data re-run is a no-op (1.05→1.05), while genuinely new data still steps (1.05→1.10).
 
 **File:** `scripts/calibration.py:288` (docstring) vs `:103-106` (stepping logic)
 **Issue:** The docstring asserts "Running twice on unchanged data is idempotent (factors converge to the same value)." This is false for the as-written stepping logic. With identical data the factor advances by up to `MAX_STEP` (0.05) on *every* invocation until it reaches the clamped target. Demonstrated: identical MLB data produced `1.00 → 1.05` (cycle 1) → `1.10` (cycle 2), and would continue to `1.20`. Since `weekly_metrics` is a cron job, an operator re-running it (or a retry) the same week double-steps the factor without new data — directly affecting next week's projection probabilities. The "idempotent" claim is not just a doc error; it implies a safety property that does not exist.
