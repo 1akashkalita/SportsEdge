@@ -371,9 +371,26 @@ def write_slip_history_rows(
       - If not found → appends a new row.
 
     Returns the number of rows written (upserted or appended).
+
+    Preservation rules on upsert:
+      IN-01: Graded At is preserved from the existing row when the financial
+             result (Stake Units / Gross Return / Net PnL) is unchanged.
+      WR-03: Contains Demon / Contains Goblin / Special Line Count are preserved
+             from the existing row to protect the audit trail when synthetic legs
+             (used by rebuild_slip_bankroll) carry no line_type field.
     """
     slip_id_col = _slip_id_col_index()
     date_col = _date_col_index()
+
+    # Pre-compute 1-based column indices for the preserved fields.
+    _graded_at_col_1 = SLIP_HISTORY_HEADERS.index("Graded At") + 1
+    _stake_units_col_1 = SLIP_HISTORY_HEADERS.index("Stake Units") + 1
+    _gross_return_col_1 = SLIP_HISTORY_HEADERS.index("Gross Return") + 1
+    _net_pnl_col_1 = SLIP_HISTORY_HEADERS.index("Net PnL") + 1
+    _demon_col_1 = SLIP_HISTORY_HEADERS.index("Contains Demon") + 1
+    _goblin_col_1 = SLIP_HISTORY_HEADERS.index("Contains Goblin") + 1
+    _special_count_col_1 = SLIP_HISTORY_HEADERS.index("Special Line Count") + 1
+
     written = 0
 
     for graded in graded_slips:
@@ -389,18 +406,62 @@ def write_slip_history_rows(
         )
 
         # Scan for existing (Date, Slip ID) match to upsert.
+        # WR-01: normalise both sides to [:10] so timestamp-valued Date cells
+        # (e.g. "2026-06-08T12:34:56+00:00") still match the bare date string
+        # and are overwritten rather than appended as a duplicate row.
+        date_norm = str(date)[:10]
         target_row: int | None = None
         for r in range(2, ws.max_row + 1):
             cell_date = ws.cell(r, date_col).value
             cell_slip_id = ws.cell(r, slip_id_col).value
-            if str(cell_date or "") == str(date) and str(cell_slip_id or "") == graded["slip_id"]:
+            if str(cell_date or "")[:10] == date_norm and str(cell_slip_id or "") == graded["slip_id"]:
                 target_row = r
                 break
 
         if target_row is not None:
+            # IN-01: Preserve Graded At from the existing row when the financial
+            # result is unchanged — rebuilds must not corrupt the audit timestamp.
+            existing_stake = ws.cell(target_row, _stake_units_col_1).value
+            existing_gross = ws.cell(target_row, _gross_return_col_1).value
+            existing_net = ws.cell(target_row, _net_pnl_col_1).value
+            new_stake = row_data[_stake_units_col_1 - 1]
+            new_gross = row_data[_gross_return_col_1 - 1]
+            new_net = row_data[_net_pnl_col_1 - 1]
+            finances_unchanged = (
+                existing_stake == new_stake
+                and existing_gross == new_gross
+                and existing_net == new_net
+            )
+
+            # WR-03: Preserve Contains Demon / Contains Goblin / Special Line Count
+            # from the existing row.  The rebuild builds synthetic legs without
+            # line_type, which would silently reset these audit columns to False/0.
+            existing_demon = ws.cell(target_row, _demon_col_1).value
+            existing_goblin = ws.cell(target_row, _goblin_col_1).value
+            existing_special = ws.cell(target_row, _special_count_col_1).value
+
             # Overwrite existing row in place.
             for col_idx, value in enumerate(row_data, start=1):
                 ws.cell(target_row, col_idx).value = value
+
+            # IN-01: Restore Graded At if finances are unchanged.
+            if finances_unchanged:
+                existing_graded_at = ws.cell(target_row, _graded_at_col_1).value
+                # Note: we already overwrote with row_data above; now restore the
+                # original timestamp only if it is non-empty.
+                if existing_graded_at not in (None, ""):
+                    ws.cell(target_row, _graded_at_col_1).value = existing_graded_at
+
+            # WR-03: Restore audit columns when the existing values are non-trivial
+            # (non-False / non-zero), indicating a special-line slip recorded on the
+            # first write.  If the existing sheet has False/0 (default), let the
+            # freshly computed value win in case a legs-aware write provides it.
+            if existing_demon:
+                ws.cell(target_row, _demon_col_1).value = existing_demon
+            if existing_goblin:
+                ws.cell(target_row, _goblin_col_1).value = existing_goblin
+            if existing_special:
+                ws.cell(target_row, _special_count_col_1).value = existing_special
         else:
             ws.append(row_data)
 
