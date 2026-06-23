@@ -533,14 +533,12 @@ class TestSigmaInjection(unittest.TestCase):
     """METRICS-02: generate_projections reads calibration factor + applies sigma × factor (Plan 03)."""
 
     def setUp(self) -> None:
-        """Import generate_projections once; patch DATA path to a tmpdir for each test."""
+        """Import generate_projections once; store a reference to the module."""
         import generate_projections as _gp  # noqa: PLC0415
         self._gp = _gp
-        self._orig_data = _gp.DATA
 
     def tearDown(self) -> None:
-        """Restore original DATA path so later tests are unaffected."""
-        self._gp.DATA = self._orig_data
+        """No patched state to restore — path= override idiom used in each test."""
 
     def _write_cal(self, tmp: Path, factors: dict) -> None:
         """Write a minimal calibration.json under tmp/research/calibration.json."""
@@ -554,24 +552,24 @@ class TestSigmaInjection(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             self._write_cal(tmp_path, {"MLB": 1.10, "NBA": 1.0})
-            self._gp.DATA = tmp_path
-            self.assertAlmostEqual(self._gp.load_calibration_factor("MLB"), 1.10, places=6)
+            cal_path = tmp_path / "research" / "calibration.json"
+            self.assertAlmostEqual(self._gp.load_calibration_factor("MLB", path=cal_path), 1.10, places=6)
 
     def test_missing_sport_returns_neutral(self) -> None:
         """load_calibration_factor returns 1.0 for a sport not in calibration.json."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             self._write_cal(tmp_path, {"MLB": 1.10})
-            self._gp.DATA = tmp_path
-            self.assertEqual(self._gp.load_calibration_factor("NBA"), 1.0)
+            cal_path = tmp_path / "research" / "calibration.json"
+            self.assertEqual(self._gp.load_calibration_factor("NBA", path=cal_path), 1.0)
 
     def test_missing_file_returns_neutral(self) -> None:
         """load_calibration_factor returns 1.0 when calibration.json does not exist."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            # No file written — DATA points to empty tmpdir
-            self._gp.DATA = tmp_path
-            self.assertEqual(self._gp.load_calibration_factor("MLB"), 1.0)
+            # No file written — path points to nonexistent file
+            cal_path = tmp_path / "research" / "calibration.json"
+            self.assertEqual(self._gp.load_calibration_factor("MLB", path=cal_path), 1.0)
 
     def test_corrupt_file_returns_neutral(self) -> None:
         """load_calibration_factor returns 1.0 when calibration.json is corrupt JSON."""
@@ -579,17 +577,17 @@ class TestSigmaInjection(unittest.TestCase):
             tmp_path = Path(tmp)
             cal_dir = tmp_path / "research"
             cal_dir.mkdir(parents=True, exist_ok=True)
-            (cal_dir / "calibration.json").write_text("not valid json{{{{", encoding="utf-8")
-            self._gp.DATA = tmp_path
-            self.assertEqual(self._gp.load_calibration_factor("MLB"), 1.0)
+            cal_path = cal_dir / "calibration.json"
+            cal_path.write_text("not valid json{{{{", encoding="utf-8")
+            self.assertEqual(self._gp.load_calibration_factor("MLB", path=cal_path), 1.0)
 
     def test_out_of_range_factor_clamped_to_upper_bound(self) -> None:
         """load_calibration_factor clamps a stored 5.0 to the upper bound (1.20)."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             self._write_cal(tmp_path, {"MLB": 5.0})
-            self._gp.DATA = tmp_path
-            result = self._gp.load_calibration_factor("MLB")
+            cal_path = tmp_path / "research" / "calibration.json"
+            result = self._gp.load_calibration_factor("MLB", path=cal_path)
             self.assertEqual(result, 1.20)
 
     def test_out_of_range_factor_clamped_to_lower_bound(self) -> None:
@@ -597,8 +595,8 @@ class TestSigmaInjection(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             self._write_cal(tmp_path, {"MLB": 0.10})
-            self._gp.DATA = tmp_path
-            result = self._gp.load_calibration_factor("MLB")
+            cal_path = tmp_path / "research" / "calibration.json"
+            result = self._gp.load_calibration_factor("MLB", path=cal_path)
             self.assertEqual(result, 0.85)
 
     def test_sigma_wider_when_factor_above_1(self) -> None:
@@ -609,12 +607,11 @@ class TestSigmaInjection(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            # Baseline: no calibration file (factor 1.0)
-            self._gp.DATA = tmp_path
+            # Baseline: factor 1.0 (no calibration file exists — neutral path)
             sigma_neutral, _ = self._gp.estimate_sigma({"avg_stat_l5": 15.0}, "points")
             prob_neutral = self._gp.model_over_probability(20.0, 14.5, sigma_neutral)
 
-            # With factor 1.10 (wider sigma)
+            # With factor 1.10 (wider sigma) — compute manually (matches what calibration returns)
             self._write_cal(tmp_path, {"MLB": 1.10})
             sigma_wide = sigma_neutral * 1.10
             prob_wide = self._gp.model_over_probability(20.0, 14.5, sigma_wide)
