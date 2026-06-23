@@ -5284,6 +5284,307 @@ def refresh_prop_accuracy(wb: Any) -> None:
         pa_ws.append([iso_week, sport, total, wins, losses, pushes, hit_rate, updated_at])
 
 
+def rebuild_slip_bankroll(
+    dry_run: bool = False,
+    inception: str = "2026-06-08",
+    _wb_override: Any = None,
+    _master_override: Any = None,
+    _bankroll_override: Any = None,
+    _slips_dir_override: Any = None,
+) -> dict[str, Any]:
+    """Chronological idempotent re-stake and rebuild of the bankroll from inception.
+
+    For each date >= ``inception`` in ascending order:
+      1. Set start_of_day = current_bankroll (D-14 snapshot — no intra-day compounding).
+      2. For each Slip History row on that date:
+           - Skip rows where Needs Payout Reconciliation is truthy (D-13).
+           - Compute new_stake = confidence_stake(combined_probability, combined_ev_score,
+             start_of_day) using signals from the slip JSON (NEVER the JSON stake_units — Pitfall 2).
+           - Re-derive payout via calculate_slip_payout using platform/slip_type/legs from
+             Slip History (NOT the sheet's payout multiplier — Pitfall 1).
+           - Upsert via write_slip_history_rows keyed by (Date, Slip ID) — idempotent (D-12).
+      3. day_net = sum of bettable Net PnL; current_bankroll += day_net (applied once — D-14).
+      4. Append Daily Log row + Bankroll Chart Data row.
+    After all dates: write bankroll.json (starting=100, current=final).
+    Single save_workbook_atomic at the end (Pitfall 3).
+
+    Args:
+        dry_run: When True, compute and return result WITHOUT writing to workbook or files.
+        inception: First date of the rebuild range (ISO date string, default 2026-06-08).
+        _wb_override: (test-only) Pre-built in-memory Workbook; skips master_pnl_workbook().
+        _master_override: (test-only) Path to save the workbook to.
+        _bankroll_override: (test-only) Path to bankroll.json.
+        _slips_dir_override: (test-only) Path to directory containing slips_<date>.json files.
+
+    Returns:
+        dict with keys: status, starting_bankroll, current_bankroll, last_graded_date,
+                        dates_processed, slips_restaked, slips_skipped, dry_run.
+    """
+    from slip_payouts import SLIP_HISTORY_HEADERS as _SHH, calculate_slip_payout as _calc_payout
+    from stake_sizing import confidence_stake as _cs
+
+    # Lazy-import grade_slips (mirrors grade_slips task lazy-import pattern)
+    _grade_slips = __import__("grade_slips")
+
+    if _wb_override is not None:
+        wb = _wb_override
+        master = _master_override
+    else:
+        wb, master = master_pnl_workbook()
+
+    bankroll_path = _bankroll_override if _bankroll_override is not None else BANKROLL
+    slips_dir = Path(_slips_dir_override) if _slips_dir_override is not None else (DATA / "research" / "slips")
+
+    # Ensure Slip History sheet exists
+    if "Slip History" not in wb.sheetnames:
+        from slip_payouts import ensure_slip_history_sheet as _ess
+        _ess(wb)
+    sh = wb["Slip History"]
+
+    # Column indices (1-based)
+    date_col = _SHH.index("Date") + 1
+    slip_id_col = _SHH.index("Slip ID") + 1
+    platform_col = _SHH.index("Platform") + 1
+    slip_type_col = _SHH.index("Slip Type") + 1
+    n_legs_col = _SHH.index("Number of Legs") + 1
+    winning_legs_col = _SHH.index("Winning Legs") + 1
+    losing_legs_col = _SHH.index("Losing Legs") + 1
+    pvd_legs_col = _SHH.index("Push/Void/DNP Legs") + 1
+    demon_col = _SHH.index("Contains Demon") + 1
+    goblin_col = _SHH.index("Contains Goblin") + 1
+    recon_col = _SHH.index("Needs Payout Reconciliation") + 1
+    net_pnl_col = _SHH.index("Net PnL") + 1
+    actual_mult_col = _SHH.index("Actual Payout Multiplier") + 1
+    legs_text_col = _SHH.index("Legs") + 1
+
+    # Step 1: Collect all distinct slip dates >= inception from Slip History
+    all_dates: list[str] = []
+    seen_dates: set[str] = set()
+    for r in range(2, sh.max_row + 1):
+        raw_date = sh.cell(r, date_col).value
+        d = str(raw_date or "")[:10]
+        if d and d >= inception and d not in seen_dates:
+            all_dates.append(d)
+            seen_dates.add(d)
+    all_dates.sort()
+
+    if not all_dates:
+        # Nothing to rebuild
+        bankroll_result: dict[str, Any] = {
+            "status": "ok",
+            "starting_bankroll": 100.0,
+            "current_bankroll": 100.0,
+            "last_graded_date": None,
+            "dates_processed": 0,
+            "slips_restaked": 0,
+            "slips_skipped": 0,
+            "dry_run": dry_run,
+        }
+        return bankroll_result
+
+    # Step 2: Load slip JSON signals (combined_probability, combined_ev_score) keyed by
+    # Slip ID, for each date that has a slips_<date>.json file.
+    # WARNING (Pitfall 2): We read combined_probability + combined_ev_score, NEVER stake_units.
+    slip_signals: dict[str, dict[str, Any]] = {}
+    for d in all_dates:
+        json_path = slips_dir / f"slips_{d}.json"
+        if not json_path.exists():
+            continue
+        try:
+            json_data = json.loads(json_path.read_text())
+        except Exception:
+            continue
+        slips_dict = json_data.get("slips", {})
+        if not isinstance(slips_dict, dict):
+            continue
+        for cat, cat_slips in slips_dict.items():
+            if not isinstance(cat_slips, list):
+                continue
+            for slip in cat_slips:
+                if not isinstance(slip, dict):
+                    continue
+                # Compute Slip ID to match Slip History rows
+                try:
+                    sid = _grade_slips.slip_id_for(d, slip)
+                except Exception:
+                    continue
+                prob = slip.get("combined_probability")
+                ev = slip.get("combined_ev_score")
+                if prob is not None or ev is not None:
+                    slip_signals[sid] = {
+                        "combined_probability": float(prob or 0),
+                        "combined_ev_score": float(ev or 0),
+                        "legs": slip.get("legs") or [],
+                        "platform": slip.get("platform") or "",
+                        "slip_type": slip.get("slip_type") or "",
+                    }
+
+    # Step 3: Wipe Daily Log + Bankroll Chart Data for all target dates first.
+    # Then rebuild in ascending date order. Single save_workbook_atomic at the end (Pitfall 3).
+    if not dry_run:
+        for sheet_name in ["Daily Log", "Bankroll Chart Data"]:
+            if sheet_name in wb.sheetnames:
+                for d in all_dates:
+                    remove_rows_for_date(wb[sheet_name], d)
+
+    # Step 4: Chronological rebuild loop
+    current_bankroll = 100.0
+    slips_restaked = 0
+    slips_skipped = 0
+    last_graded_date: str | None = None
+
+    for d in all_dates:
+        start_of_day = current_bankroll  # D-14: single snapshot for all same-day slips
+
+        # Gather all Slip History rows for this date
+        date_slips: list[dict[str, Any]] = []
+        for r in range(2, sh.max_row + 1):
+            raw_d = str(sh.cell(r, date_col).value or "")[:10]
+            if raw_d != d:
+                continue
+            # D-13: skip rows where Needs Payout Reconciliation is truthy
+            needs_recon = sh.cell(r, recon_col).value
+            if needs_recon is True or str(needs_recon or "").strip().upper() == "TRUE":
+                slips_skipped += 1
+                continue
+            # Read row fields from Slip History
+            slip_id = str(sh.cell(r, slip_id_col).value or "")
+            platform = str(sh.cell(r, platform_col).value or "")
+            slip_type = str(sh.cell(r, slip_type_col).value or "")
+            total_legs = int(to_float(sh.cell(r, n_legs_col).value) or 0)
+            winning_legs = int(to_float(sh.cell(r, winning_legs_col).value) or 0)
+            losing_legs = int(to_float(sh.cell(r, losing_legs_col).value) or 0)
+            pvd_legs = int(to_float(sh.cell(r, pvd_legs_col).value) or 0)
+            contains_demon = bool(sh.cell(r, demon_col).value)
+            contains_goblin = bool(sh.cell(r, goblin_col).value)
+            actual_mult = to_float(sh.cell(r, actual_mult_col).value)
+
+            # Pitfall 2: Get combined_probability + combined_ev_score from slip JSON signals.
+            # If the slip JSON is missing for this date, fall back to 0 (stake=0, no bet).
+            signals = slip_signals.get(slip_id, {})
+            prob = float(signals.get("combined_probability") or 0)
+            ev = float(signals.get("combined_ev_score") or 0)
+
+            # Compute new stake via confidence_stake (D-12 re-stake)
+            new_stake = _cs(prob, ev, start_of_day)
+
+            # Pitfall 1: Re-derive payout multiplier via calculate_slip_payout — do NOT
+            # read back the sheet's Standard/Actual Payout Multiplier as staking input.
+            # We pass actual_payout_multiplier only if it was set (manual override).
+            leg_results: list[str] = (
+                ["WIN"] * winning_legs + ["LOSS"] * losing_legs + ["PUSH"] * pvd_legs
+            )
+            payout = _calc_payout(
+                platform=platform,
+                slip_type=slip_type,
+                total_legs=total_legs,
+                winning_legs=winning_legs,
+                stake_units=new_stake,
+                leg_results=leg_results,
+                contains_demon=contains_demon,
+                contains_goblin=contains_goblin,
+                actual_payout_multiplier=actual_mult,
+            )
+
+            # Build graded slip dict for write_slip_history_rows.
+            # The `legs` list drives `slip_history_row`'s `Number of Legs = len(legs)`
+            # and the Legs text column.  Use the Slip History row's total_legs as the
+            # authoritative count (the JSON legs list may have a different length due to
+            # partial data).  Build a minimal synthetic list of length=total_legs; the
+            # Legs text column will be rewritten from this, which is acceptable because
+            # we only need to preserve the three financial columns (D-12).
+            legs_from_signals = signals.get("legs") or []
+            if len(legs_from_signals) != total_legs:
+                # Pad/truncate to match Slip History total_legs so that
+                # slip_history_row produces the correct Number of Legs.
+                if len(legs_from_signals) < total_legs:
+                    padding = [{"player_name": "", "stat_type": "", "side": "", "line": ""}] * (total_legs - len(legs_from_signals))
+                    legs_from_signals = list(legs_from_signals) + padding
+                else:
+                    legs_from_signals = list(legs_from_signals)[:total_legs]
+            graded_slip = {
+                "slip_id": slip_id,
+                "platform": platform,
+                "slip_type": slip_type,
+                "legs": legs_from_signals,
+                "stake_units": new_stake,
+                "payout": payout,
+            }
+            date_slips.append(graded_slip)
+
+        # Upsert updated Stake Units / Gross Return / Net PnL via write_slip_history_rows
+        # (idempotent by (Date, Slip ID) — D-12)
+        if date_slips:
+            _grade_slips.write_slip_history_rows(sh, d, date_slips)
+            slips_restaked += len(date_slips)
+
+        # D-14: compute day_net from bettable slips on this date (after upsert)
+        # We sum from the graded_slips we just built (avoiding re-reading the sheet)
+        day_net = 0.0
+        for gs in date_slips:
+            pout = gs["payout"]
+            if not pout.get("needs_payout_reconciliation"):
+                net = pout.get("net_pnl")
+                if net is not None:
+                    day_net += float(net)
+        day_net = round(day_net, 6)
+
+        # D-14: apply once at day close
+        current_bankroll = round(current_bankroll + day_net, 3)
+        last_graded_date = d
+
+        # Append Daily Log + Bankroll Chart Data rows
+        roi = round(((current_bankroll - 100.0) / 100.0) * 100, 2)
+        if not dry_run:
+            if "Daily Log" in wb.sheetnames:
+                wb["Daily Log"].append([d, "SLIPS", None, None, None, None, day_net, current_bankroll, "slip bankroll rebuild"])
+            if "Bankroll Chart Data" in wb.sheetnames:
+                wb["Bankroll Chart Data"].append([d, current_bankroll, roi, now_iso()])
+
+    # Step 5: Build bankroll dict
+    bankroll_dict: dict[str, Any] = {
+        "starting_bankroll": 100.0,
+        "current_bankroll": current_bankroll,
+        "total_units_bet_lifetime": 0.0,  # not tracked by slip rebuild
+        "overall_profit_loss": round(current_bankroll - 100.0, 3),
+        "roi_percentage_current": round(((current_bankroll - 100.0) / 100.0) * 100, 2),
+        "last_graded_date": last_graded_date,
+        "last_updated": now_iso(),
+        "updated_at": now_iso(),
+    }
+
+    if dry_run:
+        return {
+            "status": "ok",
+            "starting_bankroll": 100.0,
+            "current_bankroll": current_bankroll,
+            "last_graded_date": last_graded_date,
+            "dates_processed": len(all_dates),
+            "slips_restaked": slips_restaked,
+            "slips_skipped": slips_skipped,
+            "dry_run": True,
+            "bankroll": bankroll_dict,
+        }
+
+    # Non-dry-run: refresh Prop Accuracy, then single atomic save + bankroll.json write
+    refresh_prop_accuracy(wb)
+    if master is not None:
+        save_workbook_atomic(wb, master)
+    bankroll_path.write_text(json.dumps(bankroll_dict, indent=2) + "\n")
+
+    return {
+        "status": "ok",
+        "starting_bankroll": 100.0,
+        "current_bankroll": current_bankroll,
+        "last_graded_date": last_graded_date,
+        "dates_processed": len(all_dates),
+        "slips_restaked": slips_restaked,
+        "slips_skipped": slips_skipped,
+        "dry_run": False,
+        "bankroll": bankroll_dict,
+    }
+
+
 # Module-level sentinel for the one-time npx/node preflight warning (Layer-2, plan 01-5).
 # Set to True after the first preflight failure so we log at most once per process.
 _NPX_PREFLIGHT_WARNED: bool = False

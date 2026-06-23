@@ -259,5 +259,288 @@ class TestSlipBankroll(unittest.TestCase):
             self.assertIn(h, pa_headers, f"Prop Accuracy sheet missing header: {h}")
 
 
+def _make_full_slip_row(
+    date: str,
+    slip_id: str,
+    platform: str = "PrizePicks",
+    slip_type: str = "power",
+    total_legs: int = 2,
+    winning_legs: int = 2,
+    losing_legs: int = 0,
+    pvd_legs: int = 0,
+    net_pnl: float = 2.0,
+    needs_recon: bool = False,
+    stake_units: float = 1.0,
+) -> list:
+    """Build a fully-populated Slip History row for rebuild tests."""
+    row = [None] * len(SLIP_HISTORY_HEADERS)
+    h = {col: i for i, col in enumerate(SLIP_HISTORY_HEADERS)}
+    row[h["Date"]] = date
+    row[h["Slip ID"]] = slip_id
+    row[h["Platform"]] = platform
+    row[h["Slip Type"]] = slip_type
+    row[h["Number of Legs"]] = total_legs
+    row[h["Legs"]] = "PlayerA points OVER 20.5"
+    row[h["Stake Units"]] = stake_units
+    row[h["Winning Legs"]] = winning_legs
+    row[h["Losing Legs"]] = losing_legs
+    row[h["Push/Void/DNP Legs"]] = pvd_legs
+    row[h["Contains Demon"]] = False
+    row[h["Contains Goblin"]] = False
+    row[h["Special Line Count"]] = 0
+    if needs_recon:
+        row[h["Slip Result"]] = "MANUAL REVIEW"
+        row[h["Needs Payout Reconciliation"]] = True
+        row[h["Gross Return"]] = None
+        row[h["Net PnL"]] = None
+    else:
+        row[h["Slip Result"]] = "GRADED"
+        row[h["Needs Payout Reconciliation"]] = False
+        gross = stake_units + net_pnl
+        row[h["Gross Return"]] = gross
+        row[h["Net PnL"]] = net_pnl
+    row[h["Payout Confidence"]] = "standard_config"
+    row[h["Graded At"]] = "2026-06-22T00:00:00+00:00"
+    return row
+
+
+def _make_slip_json(
+    date: str,
+    slip_definitions: list[dict],
+) -> dict:
+    """Build a minimal slips_<date>.json dict from fully-specified slip dicts.
+
+    Each slip_definition must have 'category', 'legs', 'combined_probability',
+    'combined_ev_score'.  The slip_id_for(date, slip) of each definition must
+    match the Slip ID stored in the corresponding Slip History row.
+    """
+    slips_by_cat: dict[str, list[dict]] = {}
+    for slip in slip_definitions:
+        cat = slip["category"]
+        entry = dict(slip)
+        entry.setdefault("stake_units", None)  # must NOT be used by rebuild (Pitfall 2)
+        entry.setdefault("platform", "PrizePicks")
+        entry.setdefault("slip_type", "power")
+        slips_by_cat.setdefault(cat, []).append(entry)
+    return {"date": date, "slips": slips_by_cat}
+
+
+# ---------------------------------------------------------------------------
+# Rebuild tests (D-11, D-12, D-14, BANKROLL-03)
+# ---------------------------------------------------------------------------
+
+class TestRebuildSlipBankroll(unittest.TestCase):
+    """Tests for rebuild_slip_bankroll (D-11/D-12/D-13/D-14/BANKROLL-03)."""
+
+    def _make_rebuild_fixture(
+        self,
+        date: str,
+        slip_rows: list[list],
+        slip_definitions: list[dict],
+        tmpdir: Path,
+    ) -> tuple:
+        """Create a workbook + slip JSON file in tmpdir.
+
+        slip_definitions: list of slip dicts (must include category, legs,
+          combined_probability, combined_ev_score) — used verbatim in the JSON.
+          slip_id_for(date, slip) of each must match the Slip ID in slip_rows.
+
+        Returns (wb, master, bankroll_path, slips_dir).
+        """
+        wb = _make_master_wb_with_slip_history(slip_rows)
+        master = tmpdir / "master_pnl.xlsx"
+        bankroll_path = tmpdir / "bankroll.json"
+        wb.save(str(master))
+
+        slips_dir = tmpdir / "slips"
+        slips_dir.mkdir(exist_ok=True)
+        json_data = _make_slip_json(date, slip_definitions)
+        (slips_dir / f"slips_{date}.json").write_text(json.dumps(json_data))
+        return wb, master, bankroll_path, slips_dir
+
+    def test_rebuild_idempotent(self):
+        """D-11/criterion #1: running rebuild twice with no new slips yields identical current_bankroll."""
+        date = "2026-06-08"
+        from grade_slips import slip_id_for
+        # Define the canonical slip first, compute its ID, then use that ID in Slip History
+        slip_def = {
+            "category": "test_power",
+            "legs": [{"prop_id": "idem-test-001", "player_name": "PlayerA",
+                       "stat_type": "points", "line": "20.5", "side": "OVER", "sport": "NBA"}],
+            "combined_probability": 0.72,
+            "combined_ev_score": 1.45,
+        }
+        sid = slip_id_for(date, slip_def)
+
+        slip_rows = [
+            _make_full_slip_row(date, sid, platform="PrizePicks", slip_type="power",
+                                total_legs=2, winning_legs=2, losing_legs=0, pvd_legs=0,
+                                net_pnl=2.0, needs_recon=False),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            wb, master, bankroll_path, slips_dir = self._make_rebuild_fixture(
+                date, slip_rows, [slip_def], tmp_path
+            )
+            # First run (dry_run=True so it does NOT write)
+            result1 = runner.rebuild_slip_bankroll(
+                dry_run=True,
+                inception=date,
+                _wb_override=wb,
+                _master_override=master,
+                _bankroll_override=bankroll_path,
+                _slips_dir_override=str(slips_dir),
+            )
+            br1 = result1["current_bankroll"]
+
+            # Second run with same workbook (no changes to Slip History)
+            result2 = runner.rebuild_slip_bankroll(
+                dry_run=True,
+                inception=date,
+                _wb_override=wb,
+                _master_override=master,
+                _bankroll_override=bankroll_path,
+                _slips_dir_override=str(slips_dir),
+            )
+            br2 = result2["current_bankroll"]
+
+            self.assertAlmostEqual(
+                br1, br2, places=6,
+                msg=f"Rebuild is not idempotent: first={br1}, second={br2} (D-11 / criterion #1)"
+            )
+            # Sanity: result should differ from the starting 100 (a bet was placed)
+            self.assertNotEqual(br1, 100.0, "Rebuild should have modified the bankroll (win)")
+
+    def test_rebuild_starts_june8(self):
+        """BANKROLL-03/criterion #4: rebuild series starts 2026-06-08, starting_bankroll=100."""
+        date = "2026-06-08"
+        from grade_slips import slip_id_for
+        slip_def = {
+            "category": "test_power",
+            "legs": [{"prop_id": "june8-test-001", "player_name": "PlayerB",
+                       "stat_type": "points", "line": "18.5", "side": "OVER", "sport": "NBA"}],
+            "combined_probability": 0.80,
+            "combined_ev_score": 1.45,
+        }
+        sid = slip_id_for(date, slip_def)
+
+        slip_rows = [
+            _make_full_slip_row(date, sid, platform="PrizePicks", slip_type="power",
+                                total_legs=2, winning_legs=2, losing_legs=0, pvd_legs=0,
+                                net_pnl=2.0, needs_recon=False),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            wb, master, bankroll_path, slips_dir = self._make_rebuild_fixture(
+                date, slip_rows, [slip_def], tmp_path
+            )
+            # Save workbook before non-dry-run writes to it
+            wb.save(str(master))
+
+            result = runner.rebuild_slip_bankroll(
+                dry_run=False,
+                inception=date,
+                _wb_override=wb,
+                _master_override=master,
+                _bankroll_override=bankroll_path,
+                _slips_dir_override=str(slips_dir),
+            )
+            self.assertEqual(result["starting_bankroll"], 100.0,
+                             "starting_bankroll must be 100 (BANKROLL-03)")
+            self.assertEqual(result["last_graded_date"], date,
+                             "last_graded_date must be 2026-06-08")
+
+            # Verify bankroll.json was written and has starting=100
+            self.assertTrue(bankroll_path.exists(), "bankroll.json must be written")
+            bj = json.loads(bankroll_path.read_text())
+            self.assertEqual(bj["starting_bankroll"], 100.0,
+                             "bankroll.json starting_bankroll must be 100")
+
+            # Verify Bankroll Chart Data first row is 2026-06-08
+            if "Bankroll Chart Data" in wb.sheetnames:
+                bcd = wb["Bankroll Chart Data"]
+                first_date = bcd.cell(2, 1).value  # row 2 is first data row
+                self.assertEqual(str(first_date or "")[:10], date,
+                                 f"Bankroll Chart Data first row must be {date}")
+
+    def test_rebuild_restake_monotonic_same_day(self):
+        """D-12/D-14/D-06: higher-prob same-day slip gets stake >= lower-prob off same snapshot."""
+        date = "2026-06-08"
+        from grade_slips import slip_id_for
+        # Define canonical slips and compute their IDs deterministically
+        slip_def_hi = {
+            "category": "high_prob",
+            "legs": [{"prop_id": "mono-hi-001", "player_name": "PlayerHi",
+                       "stat_type": "points", "line": "25.5", "side": "OVER", "sport": "NBA"}],
+            "combined_probability": 0.72,
+            "combined_ev_score": 1.50,
+        }
+        slip_def_lo = {
+            "category": "low_prob",
+            "legs": [{"prop_id": "mono-lo-001", "player_name": "PlayerLo",
+                       "stat_type": "assists", "line": "6.5", "side": "OVER", "sport": "NBA"}],
+            "combined_probability": 0.61,
+            "combined_ev_score": 1.50,
+        }
+        sid_hi = slip_id_for(date, slip_def_hi)
+        sid_lo = slip_id_for(date, slip_def_lo)
+
+        # Both slips lose (power 2-leg: 0 winners) — payout structure doesn't affect stake
+        slip_rows = [
+            _make_full_slip_row(date, sid_hi, platform="PrizePicks", slip_type="power",
+                                total_legs=2, winning_legs=0, losing_legs=2, pvd_legs=0,
+                                net_pnl=-1.0, needs_recon=False),
+            _make_full_slip_row(date, sid_lo, platform="PrizePicks", slip_type="power",
+                                total_legs=2, winning_legs=0, losing_legs=2, pvd_legs=0,
+                                net_pnl=-1.0, needs_recon=False),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            wb, master, bankroll_path, slips_dir = self._make_rebuild_fixture(
+                date, slip_rows, [slip_def_hi, slip_def_lo], tmp_path
+            )
+            result = runner.rebuild_slip_bankroll(
+                dry_run=True,
+                inception=date,
+                _wb_override=wb,
+                _master_override=master,
+                _bankroll_override=bankroll_path,
+                _slips_dir_override=str(slips_dir),
+            )
+            self.assertEqual(result["slips_restaked"], 2, "Both slips should be re-staked")
+            self.assertEqual(result["slips_skipped"], 0, "No PENDING slips in this fixture")
+
+            # Check the Slip History rows were updated with correct stakes
+            from slip_payouts import SLIP_HISTORY_HEADERS as _SHH
+            sh = wb["Slip History"]
+            h = {col: i for i, col in enumerate(_SHH)}
+            stakes: dict[str, float] = {}
+            for r in range(2, sh.max_row + 1):
+                sid_val = str(sh.cell(r, h["Slip ID"] + 1).value or "")
+                stake_val = sh.cell(r, h["Stake Units"] + 1).value
+                if sid_val in (sid_hi, sid_lo):
+                    stakes[sid_val] = float(stake_val or 0)
+
+            stake_hi = stakes.get(sid_hi, 0.0)
+            stake_lo = stakes.get(sid_lo, 0.0)
+            self.assertGreaterEqual(
+                stake_hi, stake_lo,
+                f"Higher-prob slip stake {stake_hi} must be >= lower-prob slip stake {stake_lo} (D-06)"
+            )
+            # High prob (0.72) → mid tier: 0.65<=0.72<0.75 → 1.5% × 100 = 1.5 units
+            self.assertAlmostEqual(stake_hi, 1.5, places=3,
+                                   msg="High-prob slip (0.72) stake must be 1.5% of 100 (mid tier)")
+            # Low prob (0.61) → low tier: 0.58<=0.61<0.65 → 0.75% × 100 = 0.75 units
+            self.assertAlmostEqual(stake_lo, 0.75, places=3,
+                                   msg="Low-prob slip (0.61) stake must be 0.75% of 100 (low tier)")
+            # D-14: both sized from same start_of_day=100 (not intra-day compounding)
+            from stake_sizing import confidence_stake
+            self.assertAlmostEqual(stake_hi, confidence_stake(0.72, 1.50, 100.0), places=4)
+            self.assertAlmostEqual(stake_lo, confidence_stake(0.61, 1.50, 100.0), places=4)
+
+
 if __name__ == "__main__":
     unittest.main()
