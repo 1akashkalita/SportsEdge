@@ -58,12 +58,14 @@ def confidence_stake(
         return 0.0
 
     # D-03: tiered stake as % of start-of-day bankroll snapshot
+    # IN-03: clamp to >= 0.0 so a negative bankroll (deep drawdown) never produces
+    # a negative stake that would corrupt the bankroll ledger.
     if combined_probability >= 0.75:
-        return round(0.025 * start_of_day_bankroll, 4)   # D-03: high tier (2.5%)
+        return max(0.0, round(0.025 * start_of_day_bankroll, 4))   # D-03: high tier (2.5%)
     elif combined_probability >= 0.65:
-        return round(0.015 * start_of_day_bankroll, 4)   # D-03: mid tier (1.5%)
+        return max(0.0, round(0.015 * start_of_day_bankroll, 4))   # D-03: mid tier (1.5%)
     else:  # 0.58 <= combined_probability < 0.65
-        return round(0.0075 * start_of_day_bankroll, 4)  # D-03: low tier (0.75%)
+        return max(0.0, round(0.0075 * start_of_day_bankroll, 4))  # D-03: low tier (0.75%)
 
 
 def apply_confidence_stakes(
