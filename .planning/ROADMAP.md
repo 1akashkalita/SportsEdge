@@ -140,7 +140,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Diagnosis | v1.0 | 8/11 | In Progress|  |
+| 1. Diagnosis | v1.0 | 9/11 | In Progress|  |
 | 2. Reliability Fixes + Defect Removal | v1.0 | 3/3 | Complete   | 2026-06-22 |
 | 3. Resilience | v1.0 | 3/4 | In Progress|  |
 | 4. Observability | v1.0 | 3/3 | Complete   | 2026-06-23 |
