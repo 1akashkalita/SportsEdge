@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import unittest
+import json
 import sys
+import tempfile
+import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -166,6 +169,130 @@ class VettedPerPlatformTests(unittest.TestCase):
         kept_names = {p['player_name'] for p in kept}
         self.assertIn('Match Me', kept_names)
         self.assertNotIn('Drop Me', kept_names)
+
+
+class TestForwardStaking(unittest.TestCase):
+    """BANKROLL-02: build_slips.main() applies confidence stakes from bankroll.json.
+
+    Tests exercise the real main() code path by patching:
+    - build_slips.build_slips  → returns a fixture payload with known slips
+    - build_slips.load_correlations / build_slips.load_vetted_keys → no file I/O
+    - build_slips.SLIP_DIR → temp dir for output JSON
+    - build_slips.ROOT → temp dir with/without bankroll.json fixture
+    - sys.argv → use a synthetic far-future date to avoid date resolution side effects
+
+    Each test reads the written slips_<date>.json and asserts on stake_units.
+    """
+
+    _TEST_DATE = "2099-01-01"
+
+    def _make_fixture_payload(self, combined_probability: float, combined_ev_score: float) -> dict:
+        """Return a minimal payload with one slip in 'safest_2_leg' carrying known signal values."""
+        slip = {
+            "category": "safest_2_leg",
+            "name": "Test Safest 2-leg",
+            "platform": "PrizePicks",
+            "slip_type": "power",
+            "stake_units": 1.0,  # placeholder — main() should overwrite this
+            "is_correlated": False,
+            "legs": [],
+            "leg_count": 2,
+            "standard_payout_multiplier_if_perfect": 3.0,
+            "combined_probability": combined_probability,
+            "combined_probability_is_exact": True,
+            "combined_probability_is_approximate": False,
+            "combined_probability_note": "",
+            "combined_probability_method": "exact_independent_product",
+            "combined_probability_formula": "p1*p2",
+            "combined_ev_score": combined_ev_score,
+            "explanation": "Test slip",
+        }
+        return {
+            "date": self._TEST_DATE,
+            "generated_at": "2099-01-01T00:00:00",
+            "projection_count": 0,
+            "eligible_count": 0,
+            "vetted_source": "fallback_is_eligible",
+            "platform_breakdown": {},
+            "slips": {
+                "safest_2_leg": [slip],
+                "safest_3_leg": [],
+                "highest_ev": [],
+                "correlated_upside": [],
+                "diversified": [],
+                "kat_based": [],
+            },
+            "avoid_pairing": [],
+            "warnings": [],
+        }
+
+    def _run_main_with_root(self, tmp_path: Path) -> dict:
+        """Patch build_slips.ROOT and SLIP_DIR, run main(), return parsed output JSON."""
+        slip_dir = tmp_path / "data" / "research" / "slips"
+        with unittest.mock.patch.object(build_slips, "ROOT", tmp_path), \
+             unittest.mock.patch.object(build_slips, "SLIP_DIR", slip_dir), \
+             unittest.mock.patch("build_slips.load_vetted_keys", return_value=None), \
+             unittest.mock.patch("build_slips.load_correlations", return_value={"pairs": []}), \
+             unittest.mock.patch("build_slips.build_slips", return_value=self._fixture_payload), \
+             unittest.mock.patch.object(sys, "argv", ["build_slips", "--date", self._TEST_DATE]):
+            build_slips.main()
+        out_path = slip_dir / f"slips_{self._TEST_DATE}.json"
+        return json.loads(out_path.read_text(encoding="utf-8"))
+
+    def test_high_prob_slip_gets_real_stake(self) -> None:
+        """High-prob (+EV) slip gets stake_units == 2.5% of bankroll, NOT 1.0 (D-02/D-03)."""
+        bankroll = 100.0
+        # combined_probability >= 0.75 and combined_ev_score > 0 → high tier: 0.025 * 100.0 = 2.5
+        self._fixture_payload = self._make_fixture_payload(combined_probability=0.80, combined_ev_score=1.47)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            # Write bankroll.json with current_bankroll = 100.0
+            pnl_dir = tmp_path / "data" / "pnl"
+            pnl_dir.mkdir(parents=True, exist_ok=True)
+            (pnl_dir / "bankroll.json").write_text(
+                json.dumps({"current_bankroll": bankroll, "starting_bankroll": 100.0}),
+                encoding="utf-8",
+            )
+            result = self._run_main_with_root(tmp_path)
+        slips = result["slips"]["safest_2_leg"]
+        self.assertTrue(slips, "expected at least one slip in safest_2_leg")
+        stake = slips[0]["stake_units"]
+        expected = round(0.025 * bankroll, 4)  # 2.5
+        self.assertEqual(stake, expected, f"expected stake_units={expected} (2.5% tier), got {stake}")
+        self.assertNotEqual(stake, 1.0, "stake_units should NOT be the flat 1.0 placeholder")
+
+    def test_low_prob_or_negative_ev_gets_zero(self) -> None:
+        """Sub-0.58-prob or EV<=0 slip gets stake_units == 0.0 (D-03 zero-floor)."""
+        bankroll = 200.0
+        # combined_probability < 0.58 → zero-floor
+        self._fixture_payload = self._make_fixture_payload(combined_probability=0.55, combined_ev_score=0.50)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pnl_dir = tmp_path / "data" / "pnl"
+            pnl_dir.mkdir(parents=True, exist_ok=True)
+            (pnl_dir / "bankroll.json").write_text(
+                json.dumps({"current_bankroll": bankroll}),
+                encoding="utf-8",
+            )
+            result = self._run_main_with_root(tmp_path)
+        slips = result["slips"]["safest_2_leg"]
+        self.assertTrue(slips, "expected at least one slip in safest_2_leg")
+        stake = slips[0]["stake_units"]
+        self.assertEqual(stake, 0.0, f"expected stake_units=0.0 (zero-floor), got {stake}")
+
+    def test_missing_bankroll_fallback(self) -> None:
+        """With no bankroll.json present, every slip keeps literal stake_units=1.0 (D-04)."""
+        self._fixture_payload = self._make_fixture_payload(combined_probability=0.80, combined_ev_score=1.47)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            # Intentionally do NOT write bankroll.json — pnl dir does not even exist
+            result = self._run_main_with_root(tmp_path)
+        slips = result["slips"]["safest_2_leg"]
+        self.assertTrue(slips, "expected at least one slip in safest_2_leg")
+        stake = slips[0]["stake_units"]
+        self.assertEqual(stake, 1.0, f"expected literal fallback stake_units=1.0, got {stake}")
+        # Explicitly assert NOT the formula result (which would be 0.025 * bankroll)
+        self.assertNotEqual(stake, 0.025, "stake must be literal 1.0, not the formula result (D-04)")
 
 
 if __name__ == '__main__':
