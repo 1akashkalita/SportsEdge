@@ -47,7 +47,7 @@ Audit: [milestones/v1.0-MILESTONE-AUDIT.md](./milestones/v1.0-MILESTONE-AUDIT.md
   4. A parlay is never mis-graded against a partial leg set: it abstains (stays at prior result) when any constituent leg is not yet terminal
   5. The firecrawl fallback (flag `ENABLE_FIRECRAWL_RESULT_FALLBACK`, default off) degrades to MANUAL REVIEW on any failure, timeout, missing binary, offline, or 429 — grading never crashes and every daily run stays under the 660s cron budget
 
-**Plans**: 6 plans
+**Plans**: 6 plans + 5 gap-closure plans (01-7..01-11)
 Plans:
 
 - [x] 01-1-PLAN.md — Component 0: ESPN summary fixtures + stat_corpus oracle (testdata only)
@@ -56,6 +56,17 @@ Plans:
 - [x] 01-4-PLAN.md — value-aware TERMINAL_RESULTS guard + parlay full-leg-set fix + side re-parser
 - [x] 01-5-PLAN.md — Layer 2: verify_results.py keyless firecrawl + resolve_missing_stat (flag default off)
 - [ ] 01-6-PLAN.md — June 8 ≥80% dry-run gate + June 8–21 backfill execution (human-verified)
+
+**Gap-closure plans** (from 01-UAT.md — 4 diagnosed grading defects; run via `/gsd:execute-phase 1 --gaps-only`):
+**Wave 1** *(parallel — no file overlap)*
+- [ ] 01-7-PLAN.md — GAP 4: prop PnL = slip-terms-only (PROP + single-pick PnL=0; bankroll slips-only, BANKROLL-01)
+- [ ] 01-8-PLAN.md — GAP 3: idempotent June 8 dry-run gate (pinned pre-backfill snapshot denominator; DNP→VOID excluded, RESULTS-07)
+**Wave 2** *(serialized on sports_system_runner.py after 01-7)*
+- [ ] 01-9-PLAN.md — GAP 1: DNP→VOID auto-detection in the Layer-2 lane (abstain on undetermined; never auto-LOSS, RESULTS-05/06)
+**Wave 3** *(serialized on sports_system_runner.py after 01-9)*
+- [ ] 01-10-PLAN.md — GAP 2: PrizePicks+Underdog Fantasy-Score formulas + platform disambiguation (abstain on PP/UD disagreement, RESULTS-02/07)
+**Wave 4** *(blocked on 01-7..01-10)*
+- [ ] 01-11-PLAN.md — Full-suite regression gate: 4 gap tests green, june8 gate now PASS, baseline unchanged (human-verified)
 
 ### Phase 2: Slip Reconstruction and Grading
 
