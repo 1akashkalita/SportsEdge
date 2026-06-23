@@ -25,7 +25,7 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 
 - [x] **BANKROLL-01**: Bankroll is computed strictly from slip Net PnL; individual props are excluded from the bankroll.
 - [x] **BANKROLL-02**: Each slip is staked using confidence-scaled sizing.
-- [ ] **BANKROLL-03**: The bankroll history is rebased onto the slips-only basis from inception (2026-06-08).
+- [x] **BANKROLL-03**: The bankroll history is rebased onto the slips-only basis from inception (2026-06-08).
 - [x] **BANKROLL-04**: Prop-level W/L is retained as a model-accuracy signal, reported separately from the bankroll.
 
 ### METRICS — Dual metrics + feedback into selection (Phase 4 / P4)
@@ -65,7 +65,7 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 | SLIPS-04 | Phase 2 | Complete |
 | BANKROLL-01 | Phase 3 | Complete |
 | BANKROLL-02 | Phase 3 | Complete |
-| BANKROLL-03 | Phase 3 | Pending |
+| BANKROLL-03 | Phase 3 | Complete |
 | BANKROLL-04 | Phase 3 | Complete |
 | METRICS-01 | Phase 4 | Pending |
 | METRICS-02 | Phase 4 | Pending |

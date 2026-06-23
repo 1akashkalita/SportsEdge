@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Slips & Props Tracking
-status: executing
-stopped_at: Phase 3 plan 4 complete — slips-only bankroll rebuilt (current_bankroll=126.778 from 2026-06-08)
-last_updated: "2026-06-22T00:00:00.000Z"
+status: ready_to_plan
+stopped_at: Phase 03 complete (4/4) — ready to discuss Phase 4
+last_updated: 2026-06-23T04:19:49.759Z
 last_activity: 2026-06-22
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 13
   completed_plans: 12
-  percent: 92
+  percent: 25
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-22)
 
 **Core value:** Make the bankroll reflect actual DFS slips, track and grade both slips and props, and feed realized outcomes back into selection — so the operator can tell whether the model is improving.
-**Current focus:** Phase 03 — slips-only-bankroll
+**Current focus:** Phase 4 — dual metrics and feedback
 
 ## Current Position
 
-Phase: 03 (slips-only-bankroll) — COMPLETE (all 4 plans done; awaiting phase verification)
-Plan: 4 of 4 — COMPLETE
-Status: All plans executed; phase verification pending
-Last activity: 2026-06-22
+Phase: 4
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-06-23
 
 Progress: [█████████░] 92%
 
@@ -36,7 +36,7 @@ Progress: [█████████░] 92%
 
 **Velocity:**
 
-- Total plans completed: 0 (v2.0); 17 (v1.0 historical)
+- Total plans completed: 4 (v2.0); 17 (v1.0 historical)
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -48,6 +48,7 @@ Progress: [█████████░] 92%
 | 2. Slip Reconstruction and Grading | TBD | - | - |
 | 3. Slips-Only Bankroll | TBD | - | - |
 | 4. Dual Metrics and Feedback | TBD | - | - |
+| 03 | 4 | - | - |
 
 **Recent Trend:**
 
