@@ -154,7 +154,7 @@ Plans:
 
 **Out of scope** (routed to verify-work): RESULTS-07 and SLIPS-03 verification debt → `/gsd-verify-work 1` and `/gsd-verify-work 2`
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 **Wave 1** *(parallel — no file overlap)*
 
@@ -163,4 +163,4 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 — shares test_weekly_metrics.py with 04.1-02)*
 
-- [ ] 04.1-03-PLAN.md — Daily Prop-Accuracy refresh in sync_slip_bankroll + WR-03 partial visibility + full-suite phase gate (D-06/D-07; BANKROLL-02; METRICS-03 baseline)
+- [x] 04.1-03-PLAN.md — Daily Prop-Accuracy refresh in sync_slip_bankroll + WR-03 partial visibility + full-suite phase gate (D-06/D-07; BANKROLL-02; METRICS-03 baseline)
