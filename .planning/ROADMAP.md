@@ -154,12 +154,12 @@ Plans:
 
 **Out of scope** (routed to verify-work): RESULTS-07 and SLIPS-03 verification debt → `/gsd-verify-work 1` and `/gsd-verify-work 2`
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 **Wave 1** *(parallel — no file overlap)*
 
 - [x] 04.1-01-PLAN.md — Forward confidence staking in build_slips.main() + TestForwardStaking (BANKROLL-02; D-01..D-05)
-- [ ] 04.1-02-PLAN.md — Calibration dedup: generate_projections imports calibration.load_calibration_factor; TestSigmaInjection redirect (D-08; METRICS-03/D-13)
+- [x] 04.1-02-PLAN.md — Calibration dedup: generate_projections imports calibration.load_calibration_factor; TestSigmaInjection redirect (D-08; METRICS-03/D-13)
 
 **Wave 2** *(blocked on Wave 1 — shares test_weekly_metrics.py with 04.1-02)*
 
