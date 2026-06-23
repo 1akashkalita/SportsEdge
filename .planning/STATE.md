@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Slips & Props Tracking
-status: verifying
-stopped_at: Phase 4 context gathered
-last_updated: "2026-06-23T07:27:11.791Z"
+status: milestone_complete
+stopped_at: Milestone complete (Phase 04 was final phase)
+last_updated: 2026-06-23T07:59:00.536Z
 last_activity: 2026-06-23
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
   percent: 75
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-22)
 
 **Core value:** Make the bankroll reflect actual DFS slips, track and grade both slips and props, and feed realized outcomes back into selection — so the operator can tell whether the model is improving.
-**Current focus:** Phase 04 — dual-metrics-and-feedback
+**Current focus:** Milestone complete
 
 ## Current Position
 
-Phase: 04 (dual-metrics-and-feedback) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
+Phase: 04
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-06-23
 
 Progress: [█████████░] 94%
@@ -36,7 +36,7 @@ Progress: [█████████░] 94%
 
 **Velocity:**
 
-- Total plans completed: 4 (v2.0); 17 (v1.0 historical)
+- Total plans completed: 8 (v2.0); 17 (v1.0 historical)
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -49,6 +49,7 @@ Progress: [█████████░] 94%
 | 3. Slips-Only Bankroll | TBD | - | - |
 | 4. Dual Metrics and Feedback | TBD | - | - |
 | 03 | 4 | - | - |
+| 04 | 4 | - | - |
 
 **Recent Trend:**
 
