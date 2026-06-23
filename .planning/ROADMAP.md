@@ -119,7 +119,7 @@ Plans:
 **Wave 1** *(parallel — no file overlap)*
 
 - [x] 04-01-PLAN.md — calibration.py: per-sport sigma scaler formula + D-10 bounds + outcome reader + atomic calibration.json + AST integrity check (METRICS-02/03; D-07/D-08/D-10/D-11/D-13)
-- [ ] 04-02-PLAN.md — metrics_report.py: slip ROI + prop hit-rate by ISO-week × sport, staked-only, WoW arrows, Telegram digest + Obsidian markdown (METRICS-01; D-03/D-04/D-05/D-06)
+- [x] 04-02-PLAN.md — metrics_report.py: slip ROI + prop hit-rate by ISO-week × sport, staked-only, WoW arrows, Telegram digest + Obsidian markdown (METRICS-01; D-03/D-04/D-05/D-06)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -132,7 +132,7 @@ Plans:
 | 1. Diagnosis | v1.0 | 5/6 | In Progress|  |
 | 2. Reliability Fixes + Defect Removal | v1.0 | 3/3 | Complete   | 2026-06-22 |
 | 3. Resilience | v1.0 | 3/4 | In Progress|  |
-| 4. Observability | v1.0 | 1/3 | In Progress|  |
+| 4. Observability | v1.0 | 2/3 | In Progress|  |
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
 | 2. Slip Reconstruction and Grading | v2.0 | 0/3 | Planned | - |

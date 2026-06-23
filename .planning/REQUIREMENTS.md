@@ -30,7 +30,7 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 
 ### METRICS — Dual metrics + feedback into selection (Phase 4 / P4)
 
-- [ ] **METRICS-01**: A report surfaces slip ROI and prop hit-rate over time (by week and sport) so "improving vs stagnant" is answerable from data.
+- [x] **METRICS-01**: A report surfaces slip ROI and prop hit-rate over time (by week and sport) so "improving vs stagnant" is answerable from data.
 - [x] **METRICS-02**: Realized slip/prop outcomes feed back into projection/gate tuning via a bounded feedback loop.
 - [x] **METRICS-03**: The feedback loop is safe — it cannot retroactively change graded verdicts and preserves the integrity of the no-bet gates.
 
@@ -67,6 +67,6 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 | BANKROLL-02 | Phase 3 | Complete |
 | BANKROLL-03 | Phase 3 | Complete |
 | BANKROLL-04 | Phase 3 | Complete |
-| METRICS-01 | Phase 4 | Pending |
+| METRICS-01 | Phase 4 | Complete |
 | METRICS-02 | Phase 4 | Complete |
 | METRICS-03 | Phase 4 | Complete |
