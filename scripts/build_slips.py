@@ -417,6 +417,18 @@ def slip_platform(legs: list[dict[str, Any]]) -> str | None:
 
 
 def make_slip(category: str, name: str, legs: list[dict[str, Any]], pair_map: dict[frozenset[str], dict[str, Any]], correlated: bool = False, explanation: str = "") -> dict[str, Any]:
+    # Defensive dedup: never emit a slip with the same exact prop twice. Distinct
+    # stats for one player (KAT/correlated categories) are preserved; only an
+    # exact (player, stat, line) repeat is dropped.
+    deduped: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for leg in legs:
+        key = projection_key(leg)
+        if key in seen_ids:
+            continue
+        seen_ids.add(key)
+        deduped.append(leg)
+    legs = deduped
     probability = combined_probability_details(legs, pair_map, correlated)
     leg_count = len(legs)
     slip_type = "power" if leg_count == 2 else "flex"
@@ -502,12 +514,18 @@ def _build_category_slips(eligible: list[dict[str, Any]], correlation_payload: d
         slips["diversified"].append(make_slip("diversified", "Diversified 3-leg", diversified, pair_map, False, "Avoids same-player overlap and strong positive correlation."))
 
     # Correlated upside: prefer explicitly positive pairs (within this platform).
+    # NOTE: prop_id excludes platform, so the same player/stat/line on two
+    # platforms shares a prop_id. The correlation file pairs those as a "self
+    # pair" (prop_a == prop_b). Skipping equal ids — and requiring two distinct
+    # objects — prevents a slip with two identical legs.
     correlated_pairs: list[tuple[float, dict[str, Any], dict[str, Any], dict[str, Any]]] = []
     by_id = {projection_key(p): p for p in eligible}
     for pair in correlation_payload.get("pairs", []):
+        if pair.get("prop_a") == pair.get("prop_b"):
+            continue
         if pair.get("correlation_label") in {"strong positive correlation", "moderate positive correlation"}:
             a, b = by_id.get(pair.get("prop_a")), by_id.get(pair.get("prop_b"))
-            if a and b:
+            if a and b and a is not b:
                 correlated_pairs.append((score_ev(a) + score_ev(b), pair, a, b))
     for _, pair, a, b in sorted(correlated_pairs, key=lambda x: x[0], reverse=True)[:3]:
         slips["correlated_upside"].append(make_slip("correlated_upside", "Correlated upside pair", [a, b], pair_map, True, f"Labeled correlated: {pair.get('explanation')}"))
@@ -548,7 +566,8 @@ def build_slips(projections: list[dict[str, Any]], correlation_payload: dict[str
             continue
         group_slips = _build_category_slips(group, correlation_payload, pair_map)
         for category, group_list in group_slips.items():
-            slips[category].extend(group_list)
+            # Drop any slip that defensive dedup collapsed below 2 legs.
+            slips[category].extend(s for s in group_list if s.get("leg_count", 0) >= 2)
 
     platform_breakdown: dict[str, int] = {}
     for prop in eligible:
