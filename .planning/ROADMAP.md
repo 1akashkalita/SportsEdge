@@ -30,7 +30,7 @@ Audit: [milestones/v1.0-MILESTONE-AUDIT.md](./milestones/v1.0-MILESTONE-AUDIT.md
 - [ ] **Phase 1: Trustworthy Results** — Harden prop grading (name/stat matching), attach provenance, backfill June 8–21 MANUAL-REVIEW rows
 - [x] **Phase 2: Slip Reconstruction and Grading** — Reconstruct model-recommended slips per day, grade against P1 results, populate Slip History, backfill June 8–21 (completed 2026-06-22)
 - [ ] **Phase 3: Slips-Only Bankroll** — Rebase bankroll to slip Net PnL; confidence-scaled stakes; props become accuracy-only
-- [ ] **Phase 4: Dual Metrics and Feedback** — Slip ROI + prop hit-rate reports; bounded outcome-to-selection feedback loop
+- [x] **Phase 4: Dual Metrics and Feedback** — Slip ROI + prop hit-rate reports; bounded outcome-to-selection feedback loop (completed 2026-06-23)
 
 ## Phase Details
 
@@ -123,7 +123,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-03-PLAN.md — sigma injection in generate_projections.py + weekly_metrics task wiring + Telegram/Obsidian delivery + METRICS-03 integrity tests (verdict snapshot + gate output) (METRICS-01/02/03; D-01/D-02/D-07/D-09/D-12/D-13)
+- [x] 04-03-PLAN.md — sigma injection in generate_projections.py + weekly_metrics task wiring + Telegram/Obsidian delivery + METRICS-03 integrity tests (verdict snapshot + gate output) (METRICS-01/02/03; D-01/D-02/D-07/D-09/D-12/D-13)
 
 ## Progress
 
@@ -132,7 +132,7 @@ Plans:
 | 1. Diagnosis | v1.0 | 5/6 | In Progress|  |
 | 2. Reliability Fixes + Defect Removal | v1.0 | 3/3 | Complete   | 2026-06-22 |
 | 3. Resilience | v1.0 | 3/4 | In Progress|  |
-| 4. Observability | v1.0 | 2/3 | In Progress|  |
+| 4. Observability | v1.0 | 3/3 | Complete   | 2026-06-23 |
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
 | 2. Slip Reconstruction and Grading | v2.0 | 0/3 | Planned | - |
