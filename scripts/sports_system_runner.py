@@ -7444,7 +7444,7 @@ def main() -> int:
             if _obs03_streak >= REPEATED_FAILURE_THRESHOLD:
                 send_telegram(
                     f"🔁 REPEATED FAILURE: {args.task} partial {_obs03_streak} times in a row\n"
-                    f"Weekly metrics data is degraded — check run log"
+                    f"{args.task} returned degraded (partial) output — check run log"
                 )
         dispatch_alerts(args.task, result)
         safe_print("JSON_RESULT=" + json.dumps(result, sort_keys=True))

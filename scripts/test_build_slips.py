@@ -280,6 +280,29 @@ class TestForwardStaking(unittest.TestCase):
         stake = slips[0]["stake_units"]
         self.assertEqual(stake, 0.0, f"expected stake_units=0.0 (zero-floor), got {stake}")
 
+    def test_qualifying_prob_but_nonpositive_ev_gets_zero(self) -> None:
+        """EV gate (D-05): a slip whose probability would qualify for a stake tier
+        still gets stake_units == 0.0 when combined_ev_score <= 0 — exercised through
+        the real main() path, not just the stake_sizing unit (WR-02 coverage)."""
+        bankroll = 150.0
+        # combined_probability >= 0.75 (would be the 2.5% tier) but EV <= 0 → EV gate → 0
+        self._fixture_payload = self._make_fixture_payload(combined_probability=0.82, combined_ev_score=0.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pnl_dir = tmp_path / "data" / "pnl"
+            pnl_dir.mkdir(parents=True, exist_ok=True)
+            (pnl_dir / "bankroll.json").write_text(
+                json.dumps({"current_bankroll": bankroll}),
+                encoding="utf-8",
+            )
+            result = self._run_main_with_root(tmp_path)
+        slips = result["slips"]["safest_2_leg"]
+        self.assertTrue(slips, "expected at least one slip in safest_2_leg")
+        stake = slips[0]["stake_units"]
+        self.assertEqual(stake, 0.0, f"expected stake_units=0.0 (EV gate), got {stake}")
+        # Must NOT be the high-tier formula result (0.025 * 150.0 = 3.75) nor the 1.0 placeholder
+        self.assertNotEqual(stake, round(0.025 * bankroll, 4), "EV gate must zero the stake despite a high-tier probability")
+
     def test_missing_bankroll_fallback(self) -> None:
         """With no bankroll.json present, every slip keeps literal stake_units=1.0 (D-04)."""
         self._fixture_payload = self._make_fixture_payload(combined_probability=0.80, combined_ev_score=1.47)
