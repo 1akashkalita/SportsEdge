@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Slips & Props Tracking
-status: milestone_complete
-stopped_at: Milestone complete (Phase 04 was final phase)
-last_updated: 2026-06-23T07:59:00.536Z
-last_activity: 2026-06-23
+status: planning
+stopped_at: Phase 04.1 context gathered
+last_updated: "2026-06-23T10:09:09.873Z"
+last_activity: 2026-06-23 -- inserted Phase 04.1 from v2.0 audit
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 3
   total_plans: 16
   completed_plans: 16
-  percent: 75
+  percent: 60
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-22)
 
 **Core value:** Make the bankroll reflect actual DFS slips, track and grade both slips and props, and feed realized outcomes back into selection — so the operator can tell whether the model is improving.
-**Current focus:** Milestone complete
+**Current focus:** Phase 04.1 — close v2.0 audit gaps (forward staking, prop-accuracy refresh, calibration cleanup, P1/P2 verification debt)
 
 ## Current Position
 
-Phase: 04
+Phase: 04.1
 Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-23
+Status: Ready to plan (inserted closure phase)
+Last activity: 2026-06-23 -- inserted Phase 04.1 from v2.0 audit
 
 Progress: [█████████░] 94%
 
@@ -71,6 +71,10 @@ Progress: [█████████░] 94%
 | Phase 04-dual-metrics-and-feedback P03 | 30 | 3 tasks | 3 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 04.1 inserted after Phase 4: Close v2.0 audit gaps (BANKROLL-02 forward staking, daily prop-accuracy refresh, calibration dedup + WR-03, RESULTS-07/SLIPS-03 verification debt) (URGENT)
 
 ### Decisions
 
@@ -122,6 +126,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-23T07:27:11.756Z
-Stopped at: Phase 4 context gathered
-Resume file: None
+Last session: 2026-06-23T10:09:09.838Z
+Stopped at: Phase 04.1 context gathered
+Resume file: .planning/phases/04.1-close-v2-0-audit-gaps-forward-confidence-staking-bankroll-02/04.1-CONTEXT.md
