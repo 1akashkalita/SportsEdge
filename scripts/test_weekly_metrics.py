@@ -816,5 +816,143 @@ class TestIntegrityGateOutput(unittest.TestCase):
             )
 
 
+# ---------------------------------------------------------------------------
+# TestPartialVisibility — D-07 WR-03: degraded digest, streak counting, single-partial safety
+# ---------------------------------------------------------------------------
+
+class TestPartialVisibility(unittest.TestCase):
+    """D-07 WR-03: a weekly_metrics partial produces a visibly degraded digest,
+    is counted by trailing_failure_streak, and a single transient partial is safe."""
+
+    def test_degraded_digest(self) -> None:
+        """weekly_metrics_task partial produces a digest containing 'DEGRADED'."""
+        import unittest.mock as mock  # noqa: PLC0415
+
+        # We need weekly_metrics_task to enter the partial branch.
+        # Patch the lazy-imported metrics_report so aggregation raises immediately.
+        # The runner uses __import__("metrics_report") inside the task, so we patch
+        # the module in sys.modules.
+        import metrics_report as _mr  # noqa: PLC0415
+
+        captured_digests: list[str] = []
+
+        def fake_send_telegram(msg: str, *a, **kw) -> bool:  # noqa: ANN001
+            captured_digests.append(msg)
+            return True
+
+        original_send = runner.send_telegram
+        original_agg = _mr.aggregate_slip_roi_by_week_sport
+
+        def fail_agg():  # noqa: ANN202
+            raise RuntimeError("forced aggregation failure for test")
+
+        try:
+            runner.send_telegram = fake_send_telegram
+            _mr.aggregate_slip_roi_by_week_sport = fail_agg
+            result = runner.weekly_metrics_task()
+        finally:
+            runner.send_telegram = original_send
+            _mr.aggregate_slip_roi_by_week_sport = original_agg
+
+        self.assertEqual(result.get("status"), "partial", "task should have returned partial")
+        self.assertTrue(
+            any("DEGRADED" in d or "degraded" in d for d in captured_digests),
+            f"At least one sent digest must contain 'DEGRADED'; captured: {captured_digests}",
+        )
+
+    def test_streak_counted(self) -> None:
+        """trailing_failure_streak counts status=partial records."""
+        with tempfile.TemporaryDirectory() as tmp:
+            jsonl_path = Path(tmp) / "run_log.jsonl"
+            # Write two consecutive partial records for "weekly_metrics"
+            lines = [
+                json.dumps({"task": "weekly_metrics", "status": "partial", "timestamp": "2026-06-20T01:00:00Z"}),
+                json.dumps({"task": "weekly_metrics", "status": "partial", "timestamp": "2026-06-21T01:00:00Z"}),
+            ]
+            jsonl_path.write_text("\n".join(lines) + "\n")
+
+            orig_path = runner.RUN_LOG_JSONL
+            try:
+                runner.RUN_LOG_JSONL = jsonl_path
+                streak = runner.trailing_failure_streak("weekly_metrics")
+            finally:
+                runner.RUN_LOG_JSONL = orig_path
+
+        self.assertEqual(streak, 2, "two consecutive partials should produce a streak of 2")
+
+    def test_single_partial_no_hard_fail(self) -> None:
+        """A single prior partial gives streak 1 which is below REPEATED_FAILURE_THRESHOLD (2)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            jsonl_path = Path(tmp) / "run_log.jsonl"
+            lines = [
+                json.dumps({"task": "weekly_metrics", "status": "partial", "timestamp": "2026-06-20T01:00:00Z"}),
+            ]
+            jsonl_path.write_text("\n".join(lines) + "\n")
+
+            orig_path = runner.RUN_LOG_JSONL
+            try:
+                runner.RUN_LOG_JSONL = jsonl_path
+                streak = runner.trailing_failure_streak("weekly_metrics")
+            finally:
+                runner.RUN_LOG_JSONL = orig_path
+
+        self.assertEqual(streak, 1, "single partial should produce streak of 1")
+        self.assertLess(
+            streak,
+            runner.REPEATED_FAILURE_THRESHOLD,
+            "streak of 1 must be below REPEATED_FAILURE_THRESHOLD so no alert fires",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestReadOnly — D-06 / D-09: weekly_metrics_task stays read-only on master_pnl.xlsx
+# ---------------------------------------------------------------------------
+
+class TestReadOnly(unittest.TestCase):
+    """Structural assertion: weekly_metrics_task never calls save_workbook_atomic
+    with the master_pnl path.  The task's only write is calibration.json."""
+
+    def test_weekly_metrics_does_not_save_master_pnl(self) -> None:
+        """save_workbook_atomic is never called during weekly_metrics_task."""
+        import unittest.mock as mock  # noqa: PLC0415
+        import metrics_report as _mr  # noqa: PLC0415
+        import calibration as _cal  # noqa: PLC0415
+
+        save_calls: list = []
+
+        original_save = runner.save_workbook_atomic
+        original_send = runner.send_telegram
+
+        def spy_save(wb, path, *a, **kw):  # noqa: ANN001, ANN202
+            save_calls.append(path)
+            # Don't actually save; this is a read-only structural test
+            return None
+
+        def noop_send(msg: str, *a, **kw) -> bool:  # noqa: ANN001
+            return True
+
+        # Mock obsidian_sync to avoid filesystem side effects
+        original_obsidian = runner.obsidian_sync
+
+        def noop_obsidian(*a, **kw) -> None:  # noqa: ANN001
+            pass
+
+        try:
+            runner.save_workbook_atomic = spy_save
+            runner.send_telegram = noop_send
+            runner.obsidian_sync = noop_obsidian
+            runner.weekly_metrics_task()
+        finally:
+            runner.save_workbook_atomic = original_save
+            runner.send_telegram = original_send
+            runner.obsidian_sync = original_obsidian
+
+        self.assertEqual(
+            save_calls,
+            [],
+            f"save_workbook_atomic must never be called by weekly_metrics_task; got calls to: {save_calls}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

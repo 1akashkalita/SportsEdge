@@ -421,7 +421,7 @@ def trailing_failure_streak(task: str) -> int:
         count = 0
         for rec in reversed(task_records):
             status = rec.get("status", "")
-            if status in {"error", "timeout"}:
+            if status in {"error", "timeout", "partial"}:  # D-07 WR-03: partial counts as failure
                 count += 1
             elif status == "ok":
                 break
@@ -7337,6 +7337,9 @@ def weekly_metrics_task() -> dict[str, Any]:
         digest = _metrics_report.format_telegram_digest(report)
         if calibration_note:
             digest = digest + "\n\n" + calibration_note
+        # D-07 WR-03 (a): mark digest visibly degraded so partial never reads green
+        if result.get("status") == "partial":
+            digest = "⚠️ WEEKLY METRICS DEGRADED (partial data)\n\n" + digest
         result["telegram_sent"] = send_telegram(digest)
     except Exception as exc:  # noqa: BLE001
         log(f"[weekly_metrics] Telegram delivery failed (non-blocking): {exc}")
@@ -7431,6 +7434,18 @@ def main() -> int:
         # RES-02: mark task as complete OUTSIDE the locks block so any exception inside
         # run_task() leaves _task_result as None and still fires the TASK FAILED alert.
         _task_result = result
+        # D-07 WR-03 (d): OBS-03 repeated-partial alert on the normal-return path.
+        # A partial returns 0 (no hard-fail) and never reaches the except branches, so
+        # we wire the alert here.  The +1 accounts for the current run whose JSONL record
+        # is written later in finally (same +1 idiom as the except branches).
+        # A single transient partial (streak=1 < threshold) fires no alert (D-07).
+        if result.get("status") == "partial":
+            _obs03_streak = trailing_failure_streak(args.task) + 1
+            if _obs03_streak >= REPEATED_FAILURE_THRESHOLD:
+                send_telegram(
+                    f"🔁 REPEATED FAILURE: {args.task} partial {_obs03_streak} times in a row\n"
+                    f"Weekly metrics data is degraded — check run log"
+                )
         dispatch_alerts(args.task, result)
         safe_print("JSON_RESULT=" + json.dumps(result, sort_keys=True))
         return 0
@@ -7503,7 +7518,11 @@ def main() -> int:
             )
             append_run_record({
                 "task": args.task,
-                "status": _run_status,
+                "status": (
+                    _task_result.get("status", "ok")
+                    if _task_result is not None
+                    else _run_status
+                ),  # D-07 WR-03 (b): propagate task partial status to run_log.jsonl
                 "duration_s": round(elapsed, 1),
                 "error": _run_error,
                 "timestamp": now_iso(),
