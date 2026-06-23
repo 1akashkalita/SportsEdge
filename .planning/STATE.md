@@ -4,13 +4,13 @@ milestone: v2.0
 milestone_name: Slips & Props Tracking
 status: executing
 stopped_at: Phase 4 context gathered
-last_updated: "2026-06-23T06:45:37.296Z"
-last_activity: 2026-06-23 -- Phase 04 planning complete
+last_updated: "2026-06-23T07:08:39.098Z"
+last_activity: 2026-06-23
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 16
-  completed_plans: 12
+  completed_plans: 13
   percent: 50
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-22)
 
 **Core value:** Make the bankroll reflect actual DFS slips, track and grade both slips and props, and feed realized outcomes back into selection — so the operator can tell whether the model is improving.
-**Current focus:** Phase 4 — dual metrics and feedback
+**Current focus:** Phase 04 — dual-metrics-and-feedback
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
+Phase: 04 (dual-metrics-and-feedback) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-06-23 -- Phase 04 planning complete
+Last activity: 2026-06-23
 
-Progress: [█████████░] 92%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████████░] 92%
 | Phase 03-slips-only-bankroll P02 | 8 | 2 tasks | 2 files |
 | Phase 03-slips-only-bankroll P03 | 20 | 2 tasks | 2 files |
 | Phase 03-slips-only-bankroll P04 | ~90 | 3 tasks | 2 files |
+| Phase 04-dual-metrics-and-feedback P01 | 20 | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-23T05:16:37.067Z
+Last session: 2026-06-23T07:08:39.063Z
 Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-dual-metrics-and-feedback/04-CONTEXT.md
+Resume file: None
