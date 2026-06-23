@@ -766,7 +766,7 @@ def test_gate_output_unchanged_by_sigma_factor():
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `n_with_mop` (rows with both terminal result AND non-null MOP) or `n_outcomes` (all terminal WIN/LOSS rows) gate the ≥30 check?**
    - What we know: 42 MLB rows have MOP; 222 rows are terminal overall. Using `n_with_mop` is stricter.
