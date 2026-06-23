@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+from calibration import load_calibration_factor
 from line_timing import LINE_TIMING_FIELDS
 from workbook_io import safe_load_workbook, safe_save_workbook
 
@@ -272,25 +273,6 @@ def fallback_sigma_for_stat(stat_name: str) -> float:
         "hitter fantasy score": 4.0,
     }
     return fallback.get(stat, 2.5)
-
-
-def load_calibration_factor(sport: str) -> float:
-    """Read the per-sport sigma scaler from calibration.json.
-
-    Called at PROJECTION TIME (inside build_projection), never at import time.
-    Returns 1.0 (neutral) on any failure — missing file, corrupt JSON, missing key.
-    V5 input validation: clamped to [0.85, 1.20] before return.
-    """
-    path = DATA / "research" / "calibration.json"
-    try:
-        if path.exists():
-            cfg = json.loads(path.read_text(encoding="utf-8"))
-            raw = float(cfg.get("factors", {}).get(sport.upper(), 1.0))
-            # Clamp to valid range — defense in depth against out-of-range file values
-            return max(0.85, min(1.20, raw))
-    except Exception:
-        pass
-    return 1.0
 
 
 def estimate_sigma(stat: dict[str, Any], stat_name: str, sigma_floor: float = 0.75) -> tuple[float, str]:
