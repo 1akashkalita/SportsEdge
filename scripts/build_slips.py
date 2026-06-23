@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Build PrizePicks-style slips from SportsEdge projections and correlations."""
+"""Build DFS slips from SportsEdge projections and correlations.
+
+Slips are restricted to the gauntlet-vetted universe (APPROVED picks plus Gate-8
+exposure/concentration-cap-held picks from the day's workbook), partitioned by
+platform so every slip carries its real platform and never mixes Underdog with
+PrizePicks legs.
+"""
 from __future__ import annotations
 
 import argparse
 import json
 import math
+import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,9 +22,215 @@ from slip_payouts import payout_multiplier
 
 ROOT = Path(__file__).resolve().parents[1]
 SLIP_DIR = ROOT / "data" / "research" / "slips"
+DATA_DIR = ROOT / "data"
 
 SAFE_FLAGS = {"BAD MATCHUP"}
 KAT_NAMES = {"karl-anthony towns", "karl anthony towns"}
+
+# Sports whose workbooks may hold vetted picks.
+VETTED_SPORTS = ("nba", "mlb")
+# Gate-8 cap-held picks are vetted: they passed every quality gate and were held
+# back only by the bankroll exposure/concentration cap. MISSING-EV / MISSING-PROB
+# Gate-8 rows are quality hard-stops and are NOT in this set.
+GATE8_VETTED_MARKERS = (
+    "GATE 8 — DYNAMIC EXPOSURE CAP",
+    "GATE 8 — CONCENTRATION CAP",
+)
+# Tokens dropped when comparing a projection's stat_type to a vetted pick's text.
+STAT_STOPWORDS = {
+    "over", "under", "inn", "1st", "2nd", "3rd", "pitcher", "hitter",
+    "total", "allowed", "plus", "home",
+}
+
+
+def _strip_accents(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+
+
+def canonical_name(name: Any) -> str:
+    """Casefold, strip accents, drop punctuation, collapse whitespace."""
+    cleaned = _strip_accents(str(name or "")).casefold()
+    cleaned = re.sub(r"[^a-z0-9 ]", " ", cleaned)
+    return " ".join(cleaned.split())
+
+
+def stat_token_set(text: Any) -> set[str]:
+    """Normalize a stat label or pick fragment to comparable tokens."""
+    normalized = _strip_accents(str(text or "")).lower()
+    normalized = normalized.replace("+", " ").replace("_", " ").replace("&", " ")
+    return {w for w in re.findall(r"[a-z0-9]+", normalized) if w not in STAT_STOPWORDS}
+
+
+def pick_stat_tokens(pick_text: Any, player: Any) -> set[str]:
+    """Tokens describing the stat in a vetted pick, minus player name and numbers."""
+    player_words = set(canonical_name(player).split())
+    tokens = stat_token_set(pick_text)
+    return {t for t in tokens if t not in player_words and not re.fullmatch(r"[0-9]+", t)}
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def workbook_path(sport: str, date: str) -> Path:
+    return DATA_DIR / sport.lower() / f"{sport.lower()}_{date}.xlsx"
+
+
+def load_vetted_keys(date: str) -> dict[str, list[dict[str, Any]]] | None:
+    """Collect vetted picks (APPROVED + Gate-8 cap-held) from each sport workbook.
+
+    Returns a mapping sport-upper -> list of {player, line, platform, pick_text}.
+    Returns None when NO workbook exists for the date (caller falls back to the
+    historical is_eligible behavior for backfill).
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        return None
+
+    found_any = False
+    vetted: dict[str, list[dict[str, Any]]] = {}
+    for sport in VETTED_SPORTS:
+        path = workbook_path(sport, date)
+        if not path.exists():
+            continue
+        found_any = True
+        sport_key = sport.upper()
+        entries = vetted.setdefault(sport_key, [])
+        try:
+            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        except Exception:
+            continue
+        try:
+            _collect_approved(wb, sport_key, entries)
+            _collect_gate8(wb, sport_key, entries)
+        finally:
+            wb.close()
+
+    if not found_any:
+        return None
+    return vetted
+
+
+def _header_index(row: tuple[Any, ...]) -> dict[str, int]:
+    return {str(h): i for i, h in enumerate(row) if h is not None}
+
+
+def _collect_approved(wb: Any, sport_key: str, entries: list[dict[str, Any]]) -> None:
+    if "Picks" not in wb.sheetnames:
+        return
+    rows = list(wb["Picks"].iter_rows(values_only=True))
+    if not rows:
+        return
+    idx = _header_index(rows[0])
+    for col in ("Status", "Selection", "Player/Team", "Line", "Platform"):
+        if col not in idx:
+            return
+    for row in rows[1:]:
+        if str(row[idx["Status"]] or "").strip().upper() != "APPROVED":
+            continue
+        line = _to_float(row[idx["Line"]])
+        if line is None:
+            continue
+        entries.append({
+            "player": row[idx["Player/Team"]],
+            "line": line,
+            "platform": str(row[idx["Platform"]] or "").strip(),
+            "pick_text": str(row[idx["Selection"]] or ""),
+        })
+
+
+def _collect_gate8(wb: Any, sport_key: str, entries: list[dict[str, Any]]) -> None:
+    if "Skipped Picks" not in wb.sheetnames:
+        return
+    rows = list(wb["Skipped Picks"].iter_rows(values_only=True))
+    if not rows:
+        return
+    idx = _header_index(rows[0])
+    for col in ("Gate Failed", "Pick", "Player/Team", "Line", "Platform"):
+        if col not in idx:
+            return
+    for row in rows[1:]:
+        gate = str(row[idx["Gate Failed"]] or "")
+        if not any(marker in gate for marker in GATE8_VETTED_MARKERS):
+            continue
+        line = _to_float(row[idx["Line"]])
+        if line is None:
+            continue
+        entries.append({
+            "player": row[idx["Player/Team"]],
+            "line": line,
+            "platform": str(row[idx["Platform"]] or "").strip(),
+            "pick_text": str(row[idx["Pick"]] or ""),
+        })
+
+
+def filter_to_vetted(projections: list[dict[str, Any]], vetted: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Keep only projections that positively match a vetted pick (fail-safe).
+
+    A projection is kept iff some vetted pick of the same sport shares its
+    (canonical player, line, platform) AND the projection's stat tokens are a
+    subset of the pick's stat tokens. When several projections at the same key
+    match a single pick (e.g. bare "hits" vs "hits runs rbis"), only the
+    projection whose token set is the largest subset of the pick is kept — so a
+    bare component prop is NOT vetted by a combo pick. Anything not positively
+    matched is excluded.
+    """
+    # Index vetted picks by (sport, canonical player, line, platform).
+    pick_index: dict[tuple[str, str, float, str], list[set[str]]] = {}
+    for sport_key, picks in vetted.items():
+        for pick in picks:
+            line = _to_float(pick.get("line"))
+            if line is None:
+                continue
+            key = (
+                sport_key.upper(),
+                canonical_name(pick.get("player")),
+                round(line, 4),
+                str(pick.get("platform") or "").strip(),
+            )
+            tokens = pick_stat_tokens(pick.get("pick_text"), pick.get("player"))
+            pick_index.setdefault(key, []).append(tokens)
+
+    # Group projections by their key so we can resolve the best subset match.
+    by_key: dict[tuple[str, str, float, str], list[dict[str, Any]]] = {}
+    for proj in projections:
+        line = _to_float(proj.get("pp_line"))
+        if line is None:
+            continue
+        key = (
+            str(proj.get("sport") or "").upper(),
+            canonical_name(proj.get("player_name")),
+            round(line, 4),
+            str(proj.get("platform") or "").strip(),
+        )
+        by_key.setdefault(key, []).append(proj)
+
+    kept: list[dict[str, Any]] = []
+    for key, projs in by_key.items():
+        pick_token_sets = pick_index.get(key)
+        if not pick_token_sets:
+            continue
+        for pick_tokens in pick_token_sets:
+            # Projections whose stat tokens are a (non-empty) subset of this pick.
+            subset_matches = [
+                (proj, stat_token_set(proj.get("stat_type")))
+                for proj in projs
+            ]
+            subset_matches = [
+                (proj, toks) for proj, toks in subset_matches
+                if toks and toks <= pick_tokens
+            ]
+            if not subset_matches:
+                continue
+            best_len = max(len(toks) for _, toks in subset_matches)
+            for proj, toks in subset_matches:
+                if len(toks) == best_len and proj not in kept:
+                    kept.append(proj)
+    return kept
 
 
 def resolve_date(value: str | None) -> str:
@@ -181,6 +395,7 @@ def leg_summary(prop: dict[str, Any]) -> dict[str, Any]:
         "sport": prop.get("sport"),
         "player_name": prop.get("player_name"),
         "team": prop.get("team"),
+        "platform": prop.get("platform"),
         "stat_type": prop.get("stat_type"),
         "side": "OVER",
         "line": prop.get("pp_line"),
@@ -193,17 +408,32 @@ def leg_summary(prop: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def slip_platform(legs: list[dict[str, Any]]) -> str | None:
+    """Real platform shared by all legs, or None for unlabeled fixtures."""
+    platforms = {leg.get("platform") for leg in legs}
+    if len(platforms) == 1:
+        return next(iter(platforms))
+    return None
+
+
 def make_slip(category: str, name: str, legs: list[dict[str, Any]], pair_map: dict[frozenset[str], dict[str, Any]], correlated: bool = False, explanation: str = "") -> dict[str, Any]:
     probability = combined_probability_details(legs, pair_map, correlated)
     leg_count = len(legs)
     slip_type = "power" if leg_count == 2 else "flex"
     if "power" in name.lower():
         slip_type = "power"
-    standard_payout_multiplier = payout_multiplier("PrizePicks", slip_type, leg_count, leg_count)
+    # Real platform shared by all legs. Unlabeled fixtures (platform=None) are
+    # treated as a single legacy group whose payout table is PrizePicks.
+    platform = slip_platform(legs)
+    payout_platform = platform if platform is not None else "PrizePicks"
+    # Underdog payout tables are intentionally empty; payout_multiplier returns
+    # None there. Keep None (rendered as "n/a"); never substitute another
+    # platform's numbers — a wrong payout mis-states real money.
+    standard_payout_multiplier = payout_multiplier(payout_platform, slip_type, leg_count, leg_count)
     return {
         "category": category,
         "name": name,
-        "platform": "PrizePicks",
+        "platform": platform if platform is not None else "PrizePicks",
         "slip_type": slip_type,
         "stake_units": 1.0,
         "is_correlated": correlated,
@@ -225,14 +455,33 @@ def first_valid_combo(candidates: list[dict[str, Any]], n: int, pair_map: dict[f
     return []
 
 
-def build_slips(projections: list[dict[str, Any]], correlation_payload: dict[str, Any], date: str) -> dict[str, Any]:
-    for row in projections:
-        row["prop_id"] = projection_key(row)
-    pair_map = correlation_lookup(correlation_payload)
-    eligible = [p for p in projections if is_eligible(p)]
+SLIP_CATEGORIES = ["safest_2_leg", "safest_3_leg", "highest_ev", "correlated_upside", "diversified", "kat_based"]
+
+
+def platform_groups(eligible: list[dict[str, Any]]) -> list[tuple[Any, list[dict[str, Any]]]]:
+    """Partition eligible props by their real platform.
+
+    Each group's legs all share one platform, so any slip built within a group is
+    single-platform by construction. Unlabeled fixtures (platform=None) collapse
+    into one legacy group, preserving historical behavior for the test suite.
+    """
+    groups: dict[Any, list[dict[str, Any]]] = {}
+    order: list[Any] = []
+    for prop in eligible:
+        key = prop.get("platform")
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+    for prop in eligible:
+        groups[prop.get("platform")].append(prop)
+    return [(key, groups[key]) for key in order]
+
+
+def _build_category_slips(eligible: list[dict[str, Any]], correlation_payload: dict[str, Any], pair_map: dict[frozenset[str], dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Run the per-category combo logic over one (already single-platform) pool."""
     by_safety = sorted(eligible, key=score_safety, reverse=True)
     by_ev = sorted(eligible, key=score_ev, reverse=True)
-    slips: dict[str, Any] = {k: [] for k in ["safest_2_leg", "safest_3_leg", "highest_ev", "correlated_upside", "diversified", "kat_based"]}
+    slips: dict[str, list[dict[str, Any]]] = {k: [] for k in SLIP_CATEGORIES}
 
     legs = first_valid_combo(by_safety, 2, pair_map, conservative=True)
     if legs:
@@ -252,7 +501,7 @@ def build_slips(projections: list[dict[str, Any]], correlation_payload: dict[str
     if diversified:
         slips["diversified"].append(make_slip("diversified", "Diversified 3-leg", diversified, pair_map, False, "Avoids same-player overlap and strong positive correlation."))
 
-    # Correlated upside: prefer explicitly positive pairs.
+    # Correlated upside: prefer explicitly positive pairs (within this platform).
     correlated_pairs: list[tuple[float, dict[str, Any], dict[str, Any], dict[str, Any]]] = []
     by_id = {projection_key(p): p for p in eligible}
     for pair in correlation_payload.get("pairs", []):
@@ -279,16 +528,52 @@ def build_slips(projections: list[dict[str, Any]], correlation_payload: dict[str
         if noncorr_ev:
             slips["kat_based"].append(make_slip("kat_based", "KAT anchor + highest-EV non-correlated leg", [anchor, noncorr_ev[0]], pair_map, False, "KAT anchor paired with highest-EV non-correlated leg."))
 
+    return slips
+
+
+def build_slips(projections: list[dict[str, Any]], correlation_payload: dict[str, Any], date: str, vetted_source: str = "fallback_is_eligible") -> dict[str, Any]:
+    for row in projections:
+        row["prop_id"] = projection_key(row)
+    pair_map = correlation_lookup(correlation_payload)
+    eligible = [p for p in projections if is_eligible(p)]
+
+    # Partition the vetted/eligible pool by platform and run the per-category combo
+    # logic WITHIN each platform. Every emitted slip is therefore single-platform,
+    # carries its real platform, and has dedup'd legs (prop_id is unique per
+    # player/stat/line within a platform). A platform that cannot form a >=2-leg
+    # combo contributes no slips.
+    slips: dict[str, list[dict[str, Any]]] = {k: [] for k in SLIP_CATEGORIES}
+    for _platform, group in platform_groups(eligible):
+        if len(group) < 2:
+            continue
+        group_slips = _build_category_slips(group, correlation_payload, pair_map)
+        for category, group_list in group_slips.items():
+            slips[category].extend(group_list)
+
+    platform_breakdown: dict[str, int] = {}
+    for prop in eligible:
+        label = str(prop.get("platform") or "unlabeled")
+        platform_breakdown[label] = platform_breakdown.get(label, 0) + 1
+
     avoid_pairing = [p for p in correlation_payload.get("pairs", []) if p.get("correlation_label") == "negative/risky correlation"][:25]
     return {
         "date": date,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "projection_count": len(projections),
         "eligible_count": len(eligible),
+        "vetted_source": vetted_source,
+        "platform_breakdown": platform_breakdown,
         "slips": slips,
         "avoid_pairing": avoid_pairing,
         "warnings": [] if eligible else ["No eligible positive-EV props available."],
     }
+
+
+def _payout_display(value: Any) -> str:
+    """Underdog tables are empty -> payout None. Render gracefully as n/a."""
+    if isinstance(value, (int, float)):
+        return f"{value}x"
+    return "n/a"
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
@@ -301,7 +586,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         for slip in slips:
             lines.append(f"### {slip['name']}")
             prob_label = "Approx combined probability" if slip.get("combined_probability_is_approximate") else "Combined probability"
-            lines.append(f"{prob_label}: {slip['combined_probability']:.1%} | EV score: {slip['combined_ev_score']:+.2f} | Type: {slip.get('slip_type')} | Perfect payout: {slip.get('standard_payout_multiplier_if_perfect')}x | Correlated: {slip['is_correlated']}")
+            lines.append(f"Platform: {slip.get('platform')} | {prob_label}: {slip['combined_probability']:.1%} | EV score: {slip['combined_ev_score']:+.2f} | Type: {slip.get('slip_type')} | Perfect payout: {_payout_display(slip.get('standard_payout_multiplier_if_perfect'))} | Correlated: {slip['is_correlated']}")
             if slip.get("combined_probability_is_approximate"):
                 lines.append(f"Probability note: {slip.get('combined_probability_note')} Formula: {slip.get('combined_probability_formula')}")
             lines.append(slip.get("explanation") or "")
@@ -329,10 +614,30 @@ def main() -> int:
     args = parser.parse_args()
     date = resolve_date(args.date)
     projections = corr.load_all_projections(date)
+
+    # Restrict to the gauntlet-vetted universe when a workbook exists for the date.
+    # When no workbook exists (historical backfill), fall back to is_eligible.
+    vetted = load_vetted_keys(date)
+    if vetted is not None:
+        projections = filter_to_vetted(projections, vetted)
+        vetted_source = "workbook"
+    else:
+        vetted_source = "fallback_is_eligible"
+
     correlation_payload = load_correlations(date)
-    payload = build_slips(projections, correlation_payload, date)
+    payload = build_slips(projections, correlation_payload, date, vetted_source=vetted_source)
     json_path, md_path = write_outputs(payload, date)
-    print(json.dumps({"status": "ok", "date": date, "json": str(json_path), "markdown": str(md_path), "eligible_count": payload["eligible_count"], "slip_counts": {k: len(v) for k, v in payload["slips"].items()}, "avoid_pairing_count": len(payload.get("avoid_pairing", []))}, sort_keys=True))
+    print(json.dumps({
+        "status": "ok",
+        "date": date,
+        "json": str(json_path),
+        "markdown": str(md_path),
+        "vetted_source": vetted_source,
+        "eligible_count": payload["eligible_count"],
+        "platform_breakdown": payload.get("platform_breakdown", {}),
+        "slip_counts": {k: len(v) for k, v in payload["slips"].items()},
+        "avoid_pairing_count": len(payload.get("avoid_pairing", [])),
+    }, sort_keys=True))
     return 0
 
 
