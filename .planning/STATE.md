@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Slips & Props Tracking
 status: executing
-stopped_at: Phase 3 context gathered
-last_updated: "2026-06-23T03:06:14.237Z"
-last_activity: 2026-06-23
+stopped_at: Phase 3 plan 4 complete — slips-only bankroll rebuilt (current_bankroll=126.778 from 2026-06-08)
+last_updated: "2026-06-22T00:00:00.000Z"
+last_activity: 2026-06-22
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 13
-  completed_plans: 11
-  percent: 25
+  completed_plans: 12
+  percent: 92
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-22)
 
 ## Current Position
 
-Phase: 03 (slips-only-bankroll) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-06-23
+Phase: 03 (slips-only-bankroll) — COMPLETE (all 4 plans done; awaiting phase verification)
+Plan: 4 of 4 — COMPLETE
+Status: All plans executed; phase verification pending
+Last activity: 2026-06-22
 
-Progress: [█████████░] 85%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [█████████░] 85%
 | Phase 02-slip-reconstruction-and-grading P2 | 12 | 3 tasks | 2 files |
 | Phase 03-slips-only-bankroll P02 | 8 | 2 tasks | 2 files |
 | Phase 03-slips-only-bankroll P03 | 20 | 2 tasks | 2 files |
+| Phase 03-slips-only-bankroll P04 | ~90 | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Recent decisions affecting current work:
 - Plan 01-2: Hit-type counts from plays[].type.type stored as batting._hit_counts; atBats top-level key absent (oracle RECLASSIFY #8)
 - Plan 01-2: name_match abstains (returns None) on ambiguous Tier 3/4 matches — strictly no-guess for real-money grading
 - [Phase ?]: Plan 01-5: Layer-2 flag default OFF; enable after smoke test confirms keyless firecrawl-cli@1.19.2
+- [Phase 03, Plan 04]: Slips-only bankroll rebuilt from 2026-06-08 with starting_bankroll=100; live current_bankroll=126.778 (66 slips, 12 dates); 22 MANUAL REVIEW slips excluded (D-13); wipe-scope defect found+fixed (539cbdf) — wipe must cover full inception-onward range, not just slip-dates
+- [Phase 03, Plan 04]: rebuild_bankroll task wired (660s budget, master_pnl.xlsx cooperative lock); one-time operator-authorized live write confirmed idempotent on second run
 
 ### Pending Todos
 
@@ -114,6 +117,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-23T03:06:14.206Z
-Stopped at: Phase 3 context gathered
+Last session: 2026-06-22T00:00:00.000Z
+Stopped at: Phase 03 plan 04 complete — slips-only bankroll rebuilt and operator-approved; phase verification pending
 Resume file: None

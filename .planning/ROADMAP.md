@@ -101,7 +101,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03-04-PLAN.md — one-time rebuild + in-place re-stake from 2026-06-08, human-verified real-money write (BANKROLL-03; D-11/D-12/D-14)
+- [x] 03-04-PLAN.md — one-time rebuild + in-place re-stake from 2026-06-08, human-verified real-money write (BANKROLL-03; D-11/D-12/D-14) — completed 2026-06-22 (current_bankroll=126.778)
 
 ### Phase 4: Dual Metrics and Feedback
 
@@ -127,5 +127,5 @@ Plans:
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
 | 2. Slip Reconstruction and Grading | v2.0 | 0/3 | Planned | - |
-| 3. Slips-Only Bankroll | v2.0 | 0/4 | Planned | - |
+| 3. Slips-Only Bankroll | v2.0 | 4/4 | Awaiting phase verification | 2026-06-22 |
 | 4. Dual Metrics and Feedback | v2.0 | 0/TBD | Not started | - |
