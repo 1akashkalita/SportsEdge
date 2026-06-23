@@ -92,7 +92,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — stake_sizing.py confidence-stake helper + unit tests (BANKROLL-02; D-01..D-06)
+- [x] 03-01-PLAN.md — stake_sizing.py confidence-stake helper + unit tests (BANKROLL-02; D-01..D-06)
 - [ ] 03-02-PLAN.md — Gate-8 exposure-cap removal + test_dynamic_gate8 update; concentration caps preserved (D-07/D-08)
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -122,7 +122,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 1. Diagnosis | v1.0 | 5/6 | In Progress|  |
 | 2. Reliability Fixes + Defect Removal | v1.0 | 3/3 | Complete   | 2026-06-22 |
-| 3. Resilience | v1.0 | 3/3 | Complete | 2026-06-21 |
+| 3. Resilience | v1.0 | 1/4 | In Progress|  |
 | 4. Observability | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
