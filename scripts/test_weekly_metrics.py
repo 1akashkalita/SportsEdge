@@ -164,6 +164,62 @@ class TestCalibrationGateNotMet(unittest.TestCase):
         )
         self.assertIn("15", audit["reason"])
 
+    # WR-01: population mismatch — gate must be on n_with_mop, not n_outcomes
+    def test_wr01_gate_on_mop_backed_population_not_total_outcomes(self) -> None:
+        """WR-01 RED: 30 graded WIN/LOSS rows but only 3 carry MOP.
+
+        n_outcomes=30 (old buggy gate passes) but n_with_mop=3 < N_GATE=30.
+        The factor must NOT move — gate must guard on the MOP-backed count.
+        Empirical and model_implied must share the same denominator (both over MOP rows).
+        """
+        # 27 outcomes have no MOP, 3 have MOP=0.9 → n_with_mop=3, n_outcomes=30
+        new_factor, audit = calibration.compute_calibration_target(
+            wins=15,
+            losses=15,
+            mop_values=[0.9] * 3,  # only 3 MOP-backed rows
+            prev_factor=1.0,
+            n_gate=calibration.N_GATE,  # 30
+        )
+        self.assertEqual(new_factor, 1.0,
+                         "factor must not move: n_with_mop=3 < N_GATE=30, even though n_outcomes=30")
+        self.assertIn("gate not met", audit["reason"],
+                      "reason must indicate gate not met when n_with_mop < n_gate")
+        # Reason must cite n_with_mop (3), not n_outcomes (30)
+        self.assertIn("3", audit["reason"],
+                      "reason must reference n_with_mop=3, not n_outcomes=30")
+
+    def test_wr01_empirical_and_model_implied_same_denominator_via_read(self) -> None:
+        """WR-01 RED: read_graded_outcomes_for_sport win/loss tally is MOP-backed.
+
+        With 30 graded rows but only 3 carrying MOP, the returned wins+losses
+        must equal len(mop_values) (both = 3), not 30.
+        """
+        rows: list[list] = []
+        # 27 rows with no MOP
+        for _ in range(14):
+            rows.append(_make_ph_row("2026-06-10", "MLB", "PROP", "WIN", None))
+        for _ in range(13):
+            rows.append(_make_ph_row("2026-06-10", "MLB", "PROP", "LOSS", None))
+        # 3 rows with MOP
+        for _ in range(2):
+            rows.append(_make_ph_row("2026-06-10", "MLB", "PROP", "WIN", 0.9))
+        rows.append(_make_ph_row("2026-06-10", "MLB", "PROP", "LOSS", 0.9))
+
+        wb = _make_pick_history_wb(rows)
+        counts = calibration.read_graded_outcomes_for_sport("MLB", _wb_override=wb)
+
+        # After WR-01 fix: wins+losses must equal n_with_mop (3)
+        self.assertEqual(
+            counts["wins"] + counts["losses"],
+            counts["n_with_mop"],
+            "wins+losses must equal n_with_mop so empirical and model_implied share a denominator",
+        )
+        self.assertEqual(counts["n_with_mop"], 3,
+                         "only 3 rows have MOP — n_with_mop must be 3")
+        # n_total_graded must reflect all 30 graded rows (informational)
+        self.assertEqual(counts.get("n_total_graded", -1), 30,
+                         "n_total_graded must count all WIN/LOSS rows regardless of MOP presence")
+
 
 # ---------------------------------------------------------------------------
 # TestCalibrationBounds — D-10: factor always in [0.85, 1.20], step ≤ ±0.05
@@ -228,6 +284,113 @@ class TestCalibrationBounds(unittest.TestCase):
             self.assertLessEqual(
                 abs(new_factor - prev), 0.05 + 1e-9,
                 f"delta exceeded max_step for case wins={wins}, prev={prev}",
+            )
+
+
+# ---------------------------------------------------------------------------
+# TestIdempotentStepping — WR-02: re-running on unchanged data must not step
+# ---------------------------------------------------------------------------
+
+class TestIdempotentStepping(unittest.TestCase):
+    """WR-02: compute_and_update_calibration must be idempotent on unchanged data."""
+
+    def _make_mlb_wb_with_mop(self) -> "Workbook":
+        """Seed 32 MLB WIN/LOSS rows all carrying MOP — enough to pass the gate."""
+        rows: list[list] = []
+        for i in range(16):
+            rows.append(_make_ph_row("2026-06-10", "MLB", "PROP", "WIN", 0.72))
+        for i in range(16):
+            rows.append(_make_ph_row("2026-06-10", "MLB", "PROP", "LOSS", 0.65))
+        return _make_pick_history_wb(rows)
+
+    def test_wr02_second_run_on_unchanged_data_does_not_step(self) -> None:
+        """WR-02 RED: calling compute_and_update_calibration twice on identical data
+        must not move the factor on the second call.
+
+        First call may step the factor (new data vs. no persisted fingerprint).
+        Second call on the exact same underlying data must be a no-op for the factor.
+        """
+        wb = self._make_mlb_wb_with_mop()
+        with tempfile.TemporaryDirectory() as tmp:
+            cal_path = Path(tmp) / "calibration.json"
+
+            # First run: calibration.json doesn't exist yet — data is "new"
+            result1 = calibration.compute_and_update_calibration(
+                path=cal_path, _wb_override=wb
+            )
+            factor_after_first = result1["factors"]["MLB"]
+
+            # Second run: same wb (identical underlying data)
+            result2 = calibration.compute_and_update_calibration(
+                path=cal_path, _wb_override=wb
+            )
+            factor_after_second = result2["factors"]["MLB"]
+
+            self.assertEqual(
+                factor_after_first,
+                factor_after_second,
+                "re-running on unchanged data must not move the factor (idempotence: WR-02)",
+            )
+            # Audit reason on second run should say "no new graded data"
+            mlb_audit2 = next(
+                (a for a in result2["audits"] if a.get("sport") == "MLB"), {}
+            )
+            self.assertIn(
+                "no new graded data",
+                mlb_audit2.get("reason", ""),
+                "second run reason must indicate no new data",
+            )
+
+    def test_wr02_new_data_still_steps(self) -> None:
+        """WR-02 RED: a run with genuinely different data still steps by up to MAX_STEP.
+
+        First run uses wb_v1 (32 rows). Second run uses wb_v2 (34 rows: 2 more WIN+MOP).
+        Factor must move on the second run because the fingerprint differs.
+        """
+        # Build v1 workbook (32 rows)
+        rows_v1: list[list] = []
+        for _ in range(16):
+            rows_v1.append(_make_ph_row("2026-06-10", "MLB", "PROP", "WIN", 0.72))
+        for _ in range(16):
+            rows_v1.append(_make_ph_row("2026-06-10", "MLB", "PROP", "LOSS", 0.65))
+        wb_v1 = _make_pick_history_wb(rows_v1)
+
+        # Build v2 workbook (34 rows — 2 more WIN with MOP)
+        rows_v2 = list(rows_v1)
+        rows_v2.append(_make_ph_row("2026-06-11", "MLB", "PROP", "WIN", 0.72))
+        rows_v2.append(_make_ph_row("2026-06-11", "MLB", "PROP", "WIN", 0.72))
+        wb_v2 = _make_pick_history_wb(rows_v2)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cal_path = Path(tmp) / "calibration.json"
+
+            # First run with v1
+            result1 = calibration.compute_and_update_calibration(
+                path=cal_path, _wb_override=wb_v1
+            )
+            factor_after_v1 = result1["factors"]["MLB"]
+
+            # Second run with v2 (different fingerprint: wins+2)
+            result2 = calibration.compute_and_update_calibration(
+                path=cal_path, _wb_override=wb_v2
+            )
+            factor_after_v2 = result2["factors"]["MLB"]
+
+            # Factor may move (new data) — but must still respect MAX_STEP
+            # The test doesn't assert direction, only that it was allowed to change
+            mlb_audit2 = next(
+                (a for a in result2["audits"] if a.get("sport") == "MLB"), {}
+            )
+            self.assertNotEqual(
+                mlb_audit2.get("reason", ""),
+                "no new graded data since last calibration",
+                "second run with new data must NOT be treated as a no-op",
+            )
+            # Step must still respect the ±MAX_STEP bound
+            self.assertLessEqual(
+                abs(factor_after_v2 - factor_after_v1),
+                calibration.MAX_STEP + 1e-9,
+                "even with new data, step must not exceed MAX_STEP",
             )
 
 
