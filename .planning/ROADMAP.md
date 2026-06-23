@@ -114,7 +114,16 @@ Plans:
   2. Realized slip and prop outcomes feed back into the projection or gate configuration in a bounded, observable way — at least one tunable parameter is updated by outcomes
   3. The feedback loop cannot retroactively alter any graded verdict (WIN/LOSS/PUSH/VOID) and cannot modify no-bet gate logic or pick output verdicts — the integrity of grading and the gate gauntlet is preserved by design, confirmed by a test
 
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+**Wave 1** *(parallel — no file overlap)*
+
+- [ ] 04-01-PLAN.md — calibration.py: per-sport sigma scaler formula + D-10 bounds + outcome reader + atomic calibration.json + AST integrity check (METRICS-02/03; D-07/D-08/D-10/D-11/D-13)
+- [ ] 04-02-PLAN.md — metrics_report.py: slip ROI + prop hit-rate by ISO-week × sport, staked-only, WoW arrows, Telegram digest + Obsidian markdown (METRICS-01; D-03/D-04/D-05/D-06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-03-PLAN.md — sigma injection in generate_projections.py + weekly_metrics task wiring + Telegram/Obsidian delivery + METRICS-03 integrity tests (verdict snapshot + gate output) (METRICS-01/02/03; D-01/D-02/D-07/D-09/D-12/D-13)
 
 ## Progress
 
@@ -128,4 +137,4 @@ Plans:
 | 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
 | 2. Slip Reconstruction and Grading | v2.0 | 0/3 | Planned | - |
 | 3. Slips-Only Bankroll | v2.0 | 4/4 | Awaiting phase verification | 2026-06-22 |
-| 4. Dual Metrics and Feedback | v2.0 | 0/TBD | Not started | - |
+| 4. Dual Metrics and Feedback | v2.0 | 0/3 | Planned | - |
