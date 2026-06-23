@@ -5288,6 +5288,7 @@ def sync_slip_bankroll(
                 + [{"result": "PUSH", "units": 1, "pnl": 0}] * all_slip_pushes
             )
             refresh_performance_breakdown(wb, bankroll, _pb_rows)
+        refresh_prop_accuracy(wb)   # D-06: keep Prop Accuracy live on daily grade path
         # Save workbook BEFORE writing bankroll.json (T-03-08: atomic write ordering)
         if master is not None:
             save_workbook_atomic(wb, master)
