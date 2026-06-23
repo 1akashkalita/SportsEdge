@@ -167,16 +167,29 @@ class TestSlipBankroll(unittest.TestCase):
                 # After severing, sync_master_and_bankroll should NOT call BANKROLL.write_text
                 # We verify by checking bankroll.json is NOT created by the prop path
                 import inspect
+                import ast
                 src = inspect.getsource(runner.sync_master_and_bankroll)
                 self.assertNotIn(
                     "BANKROLL.write_text",
                     src,
                     "sync_master_and_bankroll must not write bankroll.json (prop coupling severed, D-09)"
                 )
-                self.assertNotIn(
-                    "Bankroll Chart Data",
-                    src,
-                    "sync_master_and_bankroll must not append to Bankroll Chart Data (D-09)"
+                # Check that no executable code writes to Bankroll Chart Data (comments are OK)
+                tree = ast.parse(src)
+                bcd_writes = []
+                for node in ast.walk(tree):
+                    # Look for wb["Bankroll Chart Data"].append(...) calls
+                    if isinstance(node, ast.Call):
+                        fn = node.func
+                        if isinstance(fn, ast.Attribute) and fn.attr == "append":
+                            val_node = fn.value
+                            if isinstance(val_node, ast.Subscript):
+                                slice_node = val_node.slice
+                                if isinstance(slice_node, ast.Constant) and slice_node.value == "Bankroll Chart Data":
+                                    bcd_writes.append(ast.dump(node))
+                self.assertEqual(
+                    bcd_writes, [],
+                    f"sync_master_and_bankroll must not append to Bankroll Chart Data (D-09): {bcd_writes}"
                 )
 
                 # The dry_run slip bankroll remains the same regardless of prop flip

@@ -293,6 +293,9 @@ RESULT_HEADERS = [
     "Favorable Line Move 0.5+", "Demon Available", "Goblin Available", "Injury Flag",
     "Correlation Group", "Slip ID", "Graded At", "Notes", "Game", "Actual",
 ] + MARKET_CONTEXT_FIELDS + ["Result Source", "Result Confidence"]
+PROP_ACCURACY_HEADERS = [
+    "Week", "Sport", "Total Props", "Wins", "Losses", "Pushes", "Hit Rate", "Updated At",
+]
 
 
 def now_iso() -> str:
@@ -4852,6 +4855,8 @@ def master_pnl_workbook():
         "Pick History": RESULT_HEADERS,
         "Performance Breakdown": ["Metric", "Value", "Updated At"],
         "Bankroll Chart Data": ["Date", "Bankroll", "ROI", "Updated At"],
+        # D-10 ADDITIVE — new sheet; never rename or drop existing sheets/columns (BANKROLL-04)
+        "Prop Accuracy": PROP_ACCURACY_HEADERS,
     }
     for sheet, headers in expected.items():
         if sheet not in wb.sheetnames:
@@ -5078,27 +5083,113 @@ def sync_master_and_bankroll(date: str, newly_graded: list[dict[str, Any]]) -> d
         d = dict(zip([ph.cell(1, c).value for c in range(1, ph.max_column + 1)], vals))
         if str(d.get("Date") or "")[:10] == date:
             daily_rows.setdefault(str(d.get("Sport") or ""), []).append(d)
-    for sheet in ["Daily Log", "Bankroll Chart Data"]:
-        remove_rows_for_date(wb[sheet], date)
-    for sport_label, rows in daily_rows.items():
-        wins = len([r for r in rows if r.get("Result") == "WIN"])
-        losses = len([r for r in rows if r.get("Result") == "LOSS"])
-        pushes = len([r for r in rows if r.get("Result") == "PUSH"])
-        units = round(sum(float(to_float(r.get("Units")) or 0) for r in rows if r.get("Result") not in {"PENDING", "MANUAL REVIEW"}), 3)
-        pnl = round(sum(float(to_float(r.get("PnL")) or 0) for r in rows if r.get("Result") not in {"PENDING", "MANUAL REVIEW"}), 3)
-        wb["Daily Log"].append([date, sport_label, wins, losses, pushes, units, pnl, "", "live game grading/reconciliation"])
+    # D-09: prop->bankroll coupling SEVERED — Pick History upsert only.
+    # The bankroll (bankroll.json, Daily Log Running Bankroll, Bankroll Chart Data) is
+    # now computed exclusively from Slip History via sync_slip_bankroll (BANKROLL-01).
+    # Do NOT re-add remove_rows_for_date on Daily Log / Bankroll Chart Data here.
+    # Do NOT re-add bankroll.json writes here.
+    save_workbook_atomic(wb, master)
+    # Read current bankroll state for Obsidian/alert callers (but do NOT update it)
     try:
         bankroll = json.loads(BANKROLL.read_text()) if BANKROLL.exists() else {}
+    except Exception:
+        bankroll = {}
+    current = float(bankroll.get("current_bankroll", 100) or 100)
+    roi = float(bankroll.get("roi_percentage_current", 0) or 0)
+    flat = []
+    for sport_label, rows in daily_rows.items():
+        for r in rows:
+            flat.append({"sport": sport_label, "ref": r.get("Pick Ref"), "result": r.get("Result"), "units": r.get("Units"), "pnl": r.get("PnL"), "note": r.get("Notes"), "actual": r.get("Actual"), "platform": r.get("Platform") or ""})
+    day_pnl = round(sum(float(to_float(r.get("pnl")) or 0) for r in flat), 3)
+    obsidian_update_results_section("nba", [r for r in flat if r["sport"] == "NBA"], date, current, sum(float(to_float(r.get("pnl")) or 0) for r in flat if r["sport"] == "NBA"), None)
+    obsidian_update_results_section("mlb", [r for r in flat if r["sport"] == "MLB"], date, current, sum(float(to_float(r.get("pnl")) or 0) for r in flat if r["sport"] == "MLB"), None)
+    obsidian_update_bankroll_files(date, bankroll, flat, current, roi, day_pnl)
+    return {"bankroll": bankroll, "current": current, "roi": roi, "day_pnl": day_pnl, "daily_rows": flat, "master_pnl": str(master)}
+
+
+def sync_slip_bankroll(
+    date: str,
+    dry_run: bool = False,
+    _wb_override: Any = None,
+    _master_override: Any = None,
+    _bankroll_override: Any = None,
+) -> dict[str, Any]:
+    """Recompute bankroll ledger from Slip History for the given date (D-09 / D-13 / BANKROLL-01).
+
+    Sources bankroll.json, Daily Log Running Bankroll, and Bankroll Chart Data
+    strictly from Slip History Net PnL — excludes rows where Needs Payout
+    Reconciliation is truthy (D-13).
+
+    Args:
+        date: ISO date string (YYYY-MM-DD)
+        dry_run: When True, compute and return result without writing to workbook or bankroll.json
+        _wb_override: (test-only) pre-built in-memory Workbook; skips master_pnl_workbook()
+        _master_override: (test-only) Path to save the workbook to (only used when dry_run=False)
+        _bankroll_override: (test-only) Path to bankroll.json; overrides the global BANKROLL path
+
+    Returns:
+        dict with keys: bankroll, current, roi, day_pnl
+    """
+    from slip_payouts import SLIP_HISTORY_HEADERS as _SHH  # local import — slip_payouts is always present
+    if _wb_override is not None:
+        wb = _wb_override
+        master = _master_override
+    else:
+        wb, master = master_pnl_workbook()
+    bankroll_path = _bankroll_override if _bankroll_override is not None else BANKROLL
+
+    # --- D-13: collect this date's bettable slip rows (exclude Needs Payout Reconciliation) ---
+    sh = wb["Slip History"] if "Slip History" in wb.sheetnames else None
+    date_col = _SHH.index("Date") + 1
+    net_pnl_col = _SHH.index("Net PnL") + 1
+    recon_col = _SHH.index("Needs Payout Reconciliation") + 1
+    daily_slips: list[float] = []
+    if sh is not None:
+        for row_idx in range(2, sh.max_row + 1):
+            row_date = str(sh.cell(row_idx, date_col).value or "")[:10]
+            if row_date != date:
+                continue
+            needs_recon = sh.cell(row_idx, recon_col).value
+            if needs_recon is True or str(needs_recon or "").strip().upper() == "TRUE":
+                continue  # D-13: exclude PENDING/MANUAL REVIEW slips
+            daily_slips.append(float(to_float(sh.cell(row_idx, net_pnl_col).value) or 0))
+
+    day_pnl = round(sum(daily_slips), 6)
+
+    # --- Wipe + rebuild Daily Log and Bankroll Chart Data for this date (idempotent) ---
+    if not dry_run:
+        for sheet_name in ["Daily Log", "Bankroll Chart Data"]:
+            if sheet_name in wb.sheetnames:
+                remove_rows_for_date(wb[sheet_name], date)
+        if "Daily Log" in wb.sheetnames:
+            wb["Daily Log"].append([date, "SLIPS", None, None, None, None, day_pnl, "", "slip bankroll sync"])
+
+    # --- Sum ALL Daily Log rows to compute running balance ---
+    try:
+        bankroll = json.loads(bankroll_path.read_text()) if bankroll_path.exists() else {}
     except Exception:
         bankroll = {}
     starting = float(bankroll.get("starting_bankroll", 100) or 100)
     total_profit = 0.0
     total_units = 0.0
-    for vals in wb["Daily Log"].iter_rows(min_row=2, values_only=True):
-        total_units += float(to_float(vals[5] if len(vals) > 5 else 0) or 0)
-        total_profit += float(to_float(vals[6] if len(vals) > 6 else 0) or 0)
+    if not dry_run and "Daily Log" in wb.sheetnames:
+        for vals in wb["Daily Log"].iter_rows(min_row=2, values_only=True):
+            total_units += float(to_float(vals[5] if len(vals) > 5 else 0) or 0)
+            total_profit += float(to_float(vals[6] if len(vals) > 6 else 0) or 0)
+    else:
+        # dry_run: estimate from existing Daily Log rows (not yet rewritten) + today's day_pnl
+        if "Daily Log" in wb.sheetnames:
+            for vals in wb["Daily Log"].iter_rows(min_row=2, values_only=True):
+                row_date = str(vals[0] or "")[:10] if vals else ""
+                if row_date == date:
+                    continue  # skip today (would be replaced by our new row)
+                total_units += float(to_float(vals[5] if len(vals) > 5 else 0) or 0)
+                total_profit += float(to_float(vals[6] if len(vals) > 6 else 0) or 0)
+        total_profit += day_pnl  # add today's slip PnL
+
     current = round(starting + total_profit, 3)
     roi = round((total_profit / total_units) * 100, 2) if total_units else 0
+
     bankroll.update({
         "starting_bankroll": starting,
         "current_bankroll": current,
@@ -5109,26 +5200,88 @@ def sync_master_and_bankroll(date: str, newly_graded: list[dict[str, Any]]) -> d
         "last_updated": now_iso(),
         "updated_at": now_iso(),
     })
-    for row in wb["Daily Log"].iter_rows(min_row=2):
-        if str(row[0].value or "")[:10] == date:
-            row[7].value = current
-    wb["Bankroll Chart Data"].append([date, current, roi, now_iso()])
-    all_today = []
-    for rows in daily_rows.values():
-        for r in rows:
-            all_today.append({"result": r.get("Result"), "units": r.get("Units"), "pnl": r.get("PnL")})
-    refresh_performance_breakdown(wb, bankroll, all_today)
-    save_workbook_atomic(wb, master)
-    BANKROLL.write_text(json.dumps(bankroll, indent=2) + "\n")
-    flat = []
-    for sport_label, rows in daily_rows.items():
-        for r in rows:
-            flat.append({"sport": sport_label, "ref": r.get("Pick Ref"), "result": r.get("Result"), "units": r.get("Units"), "pnl": r.get("PnL"), "note": r.get("Notes"), "actual": r.get("Actual"), "platform": r.get("Platform") or ""})
-    day_pnl = round(sum(float(to_float(r.get("pnl")) or 0) for r in flat), 3)
-    obsidian_update_results_section("nba", [r for r in flat if r["sport"] == "NBA"], date, current, sum(float(to_float(r.get("pnl")) or 0) for r in flat if r["sport"] == "NBA"), None)
-    obsidian_update_results_section("mlb", [r for r in flat if r["sport"] == "MLB"], date, current, sum(float(to_float(r.get("pnl")) or 0) for r in flat if r["sport"] == "MLB"), None)
-    obsidian_update_bankroll_files(date, bankroll, flat, current, roi, day_pnl)
-    return {"bankroll": bankroll, "current": current, "roi": roi, "day_pnl": day_pnl, "daily_rows": flat, "master_pnl": str(master)}
+
+    if not dry_run:
+        # Update Running Bankroll column in the Daily Log row we just appended
+        if "Daily Log" in wb.sheetnames:
+            for row in wb["Daily Log"].iter_rows(min_row=2):
+                if str(row[0].value or "")[:10] == date:
+                    row[7].value = current
+        # Append Bankroll Chart Data row
+        if "Bankroll Chart Data" in wb.sheetnames:
+            wb["Bankroll Chart Data"].append([date, current, roi, now_iso()])
+        # Refresh Performance Breakdown (slip-aware: graded_rows=[] because slip grading is tracked separately)
+        if "Performance Breakdown" in wb.sheetnames:
+            refresh_performance_breakdown(wb, bankroll, [])
+        # Save workbook BEFORE writing bankroll.json (T-03-08: atomic write ordering)
+        if master is not None:
+            save_workbook_atomic(wb, master)
+        bankroll_path.write_text(json.dumps(bankroll, indent=2) + "\n")
+
+    return {"bankroll": bankroll, "current": current, "roi": roi, "day_pnl": day_pnl}
+
+
+def refresh_prop_accuracy(wb: Any) -> None:
+    """Rewrite the Prop Accuracy sheet from Pick History prop rows (D-10 / BANKROLL-04).
+
+    Groups Pick History rows by ISO week + sport, counting Wins/Losses/Pushes and
+    computing Hit Rate = wins/(wins+losses) (PUSH excluded from denominator).
+
+    Never writes to Pick History or Results — read-only from Pick History (D-10).
+    """
+    if "Prop Accuracy" not in wb.sheetnames:
+        ws = wb.create_sheet("Prop Accuracy")
+        ws.append(PROP_ACCURACY_HEADERS)
+    pa_ws = wb["Prop Accuracy"]
+    # Clear + rewrite (mirror refresh_performance_breakdown clear+rewrite pattern)
+    pa_ws.delete_rows(1, pa_ws.max_row)
+    pa_ws.append(PROP_ACCURACY_HEADERS)
+
+    if "Pick History" not in wb.sheetnames:
+        return
+
+    ph = wb["Pick History"]
+    ph_headers = [ph.cell(1, c).value for c in range(1, ph.max_column + 1)]
+    h = {col: idx for idx, col in enumerate(ph_headers) if col}
+
+    if "Date" not in h or "Result" not in h:
+        return  # Pick History has no usable columns
+
+    # Aggregate: {(iso_week, sport): {wins, losses, pushes, total}}
+    from datetime import date as _date_cls
+    agg: dict[tuple[str, str], dict[str, int]] = {}
+    for row_vals in ph.iter_rows(min_row=2, values_only=True):
+        date_val = str(row_vals[h["Date"]] or "")[:10]
+        result_val = str(row_vals[h["Result"]] or "").upper().strip()
+        sport_val = str(row_vals[h.get("Sport", -1)] if "Sport" in h and h["Sport"] < len(row_vals) else "") or "UNKNOWN"
+
+        if not date_val or result_val not in {"WIN", "LOSS", "PUSH"}:
+            continue
+
+        try:
+            d = _date_cls.fromisoformat(date_val)
+            iso_week = f"{d.isocalendar().year}-W{d.isocalendar().week:02d}"
+        except Exception:
+            continue
+
+        key = (iso_week, sport_val)
+        rec = agg.setdefault(key, {"wins": 0, "losses": 0, "pushes": 0})
+        if result_val == "WIN":
+            rec["wins"] += 1
+        elif result_val == "LOSS":
+            rec["losses"] += 1
+        elif result_val == "PUSH":
+            rec["pushes"] += 1
+
+    updated_at = now_iso()
+    for (iso_week, sport), rec in sorted(agg.items()):
+        wins = rec["wins"]
+        losses = rec["losses"]
+        pushes = rec["pushes"]
+        total = wins + losses + pushes
+        denom = wins + losses
+        hit_rate = round(wins / denom, 4) if denom > 0 else 0.0
+        pa_ws.append([iso_week, sport, total, wins, losses, pushes, hit_rate, updated_at])
 
 
 # Module-level sentinel for the one-time npx/node preflight warning (Layer-2, plan 01-5).
