@@ -290,6 +290,8 @@ class TestGradeGameDNPToVoid(unittest.TestCase):
             "Selection": f"Over {line}",
             "Platform": "PrizePicks",
             "Confidence": "High",
+            # Game ID matches game dict so game_matches_row returns True.
+            "Game ID": "401815839",
         }
 
     def _run_grade_with_appearance(
@@ -311,16 +313,16 @@ class TestGradeGameDNPToVoid(unittest.TestCase):
         # Remove default sheet
         del wb["Sheet"]
 
-        # Results sheet (with headers from RESULTS_HEADERS)
+        # Results sheet (with headers from RESULT_HEADERS)
         results_ws = wb.create_sheet("Results")
-        results_headers = runner.RESULTS_HEADERS
+        results_headers = runner.RESULT_HEADERS
         results_ws.append(results_headers)
 
         # Props sheet
         props_ws = wb.create_sheet("Props")
         props_headers = [
             "Date", "Player Name", "Stat", "Line", "Opponent/Description",
-            "Reasoning", "Selection", "Platform", "Confidence",
+            "Reasoning", "Selection", "Platform", "Confidence", "Game ID",
         ]
         props_ws.append(props_headers)
         row = self._build_prop_envelope(player, stat, line)
@@ -330,7 +332,7 @@ class TestGradeGameDNPToVoid(unittest.TestCase):
         wb.create_sheet("Picks").append(runner.PICKS_HEADERS)
         wb.create_sheet("Correlated Parlays").append(runner.PARLAY_HEADERS)
         wb.create_sheet("CLV Tracker").append(runner.CLV_HEADERS)
-        wb.create_sheet("Skipped Picks").append(runner.SKIP_HEADERS)
+        wb.create_sheet("Skipped Picks").append(runner.SKIPPED_PICK_HEADERS)
 
         # Fake game dict — no real ESPN data (player_stats will be empty -> Layer-1 None)
         game = {
@@ -361,19 +363,21 @@ class TestGradeGameDNPToVoid(unittest.TestCase):
                     with patch.object(runner, "safe_load_workbook", fake_safe_load_workbook):
                         with patch.object(runner, "save_workbook_atomic", fake_save_workbook):
                             with patch.object(runner, "ensure_workbook", return_value=wb_path):
-                                with patch.object(
-                                    runner, "resolve_player_appearance",
-                                    return_value=appearance
-                                ) as mock_rpa:
-                                    # Also patch resolve_missing_stat so it returns None
-                                    # (appearance path is consulted instead)
+                                with patch.object(runner, "sync_master_and_bankroll",
+                                                  return_value={"bankroll": {}, "daily_rows": [], "day_pnl": 0, "current": 100}):
                                     with patch.object(
-                                        runner, "resolve_missing_stat",
-                                        return_value=(None, "manual", 0.0)
+                                        runner, "resolve_player_appearance",
+                                        return_value=appearance
                                     ):
-                                        result_dict = runner.grade_game_in_workbook(
-                                            "mlb", game, date="2026-06-23", dry_run=True
-                                        )
+                                        # Also patch resolve_missing_stat so it returns None
+                                        # (appearance path is consulted instead)
+                                        with patch.object(
+                                            runner, "resolve_missing_stat",
+                                            return_value=(None, "manual", 0.0)
+                                        ):
+                                            result_dict = runner.grade_game_in_workbook(
+                                                "mlb", game, date="2026-06-23"
+                                            )
         return result_dict.get("graded", [])
 
     def test_dnp_appearance_grades_void(self) -> None:
@@ -441,65 +445,58 @@ class TestNeverAutoLoss(unittest.TestCase):
     Acceptable terminals for Layer-1 None path: VOID or MANUAL REVIEW only.
     """
 
-    def test_dnp_is_void_not_loss(self) -> None:
-        """Confirmed DNP -> VOID, never LOSS."""
+    def _build_wb_with_prop(self) -> Any:
+        """Build minimal workbook with one Nick Martinez Strikeouts prop row."""
         import openpyxl
         wb = openpyxl.Workbook()
         del wb["Sheet"]
         results_ws = wb.create_sheet("Results")
-        results_ws.append(runner.RESULTS_HEADERS)
+        results_ws.append(runner.RESULT_HEADERS)
         props_ws = wb.create_sheet("Props")
         props_headers = [
             "Date", "Player Name", "Stat", "Line", "Opponent/Description",
-            "Reasoning", "Selection", "Platform", "Confidence",
+            "Reasoning", "Selection", "Platform", "Confidence", "Game ID",
         ]
         props_ws.append(props_headers)
-        # Nick Martinez, 5 strikeouts line — he DNP -> should VOID not LOSS
-        row_data = {
-            "Date": "2026-06-23",
-            "Player Name": "Nick Martinez",
-            "Stat": "Strikeouts",
-            "Line": 5.5,
-            "Opponent/Description": "Over 5.5",
-            "Reasoning": "units=1.0",
-            "Selection": "Over 5.5",
-            "Platform": "PrizePicks",
-            "Confidence": "High",
-        }
-        props_ws.append([row_data.get(h, "") for h in props_headers])
+        props_ws.append(["2026-06-23", "Nick Martinez", "Strikeouts", 5.5,
+                         "Over 5.5", "units=1.0", "Over 5.5", "PrizePicks", "High", "401815839"])
         wb.create_sheet("Picks").append(runner.PICKS_HEADERS)
         wb.create_sheet("Correlated Parlays").append(runner.PARLAY_HEADERS)
         wb.create_sheet("CLV Tracker").append(runner.CLV_HEADERS)
-        wb.create_sheet("Skipped Picks").append(runner.SKIP_HEADERS)
+        wb.create_sheet("Skipped Picks").append(runner.SKIPPED_PICK_HEADERS)
+        return wb
 
+    def _run_grade(self, appearance: str) -> list[dict]:
+        wb = self._build_wb_with_prop()
         game = {
             "id": "401815839", "event_id": "401815839",
             "home_team": "Los Angeles Dodgers", "away_team": "Kansas City Royals",
             "home_score": 5, "away_score": 2,
             "status_name": "Final", "commence_time": "2026-06-23T18:10:00Z",
         }
-
         with tempfile.TemporaryDirectory() as td:
             tmpdir = Path(td)
             wb_path = tmpdir / "test_grade.xlsx"
             wb.save(str(wb_path))
-
             with patch.object(runner, "ENABLE_FIRECRAWL_RESULT_FALLBACK", True):
                 with patch.object(runner, "DATA", tmpdir):
-                    with patch.object(runner, "safe_load_workbook",
-                                      return_value=wb):
-                        with patch.object(runner, "save_workbook_atomic",
-                                          return_value=None):
-                            with patch.object(runner, "ensure_workbook",
-                                              return_value=wb_path):
-                                with patch.object(runner, "resolve_player_appearance",
-                                                  return_value="dnp"):
-                                    with patch.object(runner, "resolve_missing_stat",
-                                                      return_value=(None, "manual", 0.0)):
-                                        result_dict = runner.grade_game_in_workbook(
-                                            "mlb", game, date="2026-06-23", dry_run=True
-                                        )
-        graded = result_dict.get("graded", [])
+                    with patch.object(runner, "safe_load_workbook", return_value=wb):
+                        with patch.object(runner, "save_workbook_atomic", return_value=None):
+                            with patch.object(runner, "ensure_workbook", return_value=wb_path):
+                                with patch.object(runner, "sync_master_and_bankroll",
+                                                  return_value={"bankroll": {}, "daily_rows": [], "day_pnl": 0, "current": 100}):
+                                    with patch.object(runner, "resolve_player_appearance",
+                                                      return_value=appearance):
+                                        with patch.object(runner, "resolve_missing_stat",
+                                                          return_value=(None, "manual", 0.0)):
+                                            result_dict = runner.grade_game_in_workbook(
+                                                "mlb", game, date="2026-06-23"
+                                            )
+        return result_dict.get("graded", [])
+
+    def test_dnp_is_void_not_loss(self) -> None:
+        """Confirmed DNP -> VOID, never LOSS."""
+        graded = self._run_grade("dnp")
         prop_rows = [r for r in graded if str(r.get("ref", "")).startswith("PROP:")]
         for r in prop_rows:
             self.assertNotEqual(r["result"], "LOSS",
@@ -509,46 +506,7 @@ class TestNeverAutoLoss(unittest.TestCase):
 
     def test_unknown_appearance_is_not_loss(self) -> None:
         """Unknown appearance (status=skip) -> MANUAL REVIEW, never LOSS."""
-        import openpyxl
-        wb = openpyxl.Workbook()
-        del wb["Sheet"]
-        wb.create_sheet("Results").append(runner.RESULTS_HEADERS)
-        props_ws = wb.create_sheet("Props")
-        props_headers = [
-            "Date", "Player Name", "Stat", "Line", "Opponent/Description",
-            "Reasoning", "Selection", "Platform", "Confidence",
-        ]
-        props_ws.append(props_headers)
-        props_ws.append(["2026-06-23", "Nick Martinez", "Strikeouts", 5.5,
-                          "Over 5.5", "units=1.0", "Over 5.5", "PrizePicks", "High"])
-        wb.create_sheet("Picks").append(runner.PICKS_HEADERS)
-        wb.create_sheet("Correlated Parlays").append(runner.PARLAY_HEADERS)
-        wb.create_sheet("CLV Tracker").append(runner.CLV_HEADERS)
-        wb.create_sheet("Skipped Picks").append(runner.SKIP_HEADERS)
-
-        game = {
-            "id": "401815839", "event_id": "401815839",
-            "home_team": "Los Angeles Dodgers", "away_team": "Kansas City Royals",
-            "home_score": 5, "away_score": 2,
-            "status_name": "Final", "commence_time": "2026-06-23T18:10:00Z",
-        }
-
-        with tempfile.TemporaryDirectory() as td:
-            tmpdir = Path(td)
-            with patch.object(runner, "ENABLE_FIRECRAWL_RESULT_FALLBACK", True):
-                with patch.object(runner, "DATA", tmpdir):
-                    with patch.object(runner, "safe_load_workbook", return_value=wb):
-                        with patch.object(runner, "save_workbook_atomic", return_value=None):
-                            with patch.object(runner, "ensure_workbook",
-                                              return_value=tmpdir / "x.xlsx"):
-                                with patch.object(runner, "resolve_player_appearance",
-                                                  return_value="unknown"):
-                                    with patch.object(runner, "resolve_missing_stat",
-                                                      return_value=(None, "manual", 0.0)):
-                                        result_dict = runner.grade_game_in_workbook(
-                                            "mlb", game, date="2026-06-23", dry_run=True
-                                        )
-        graded = result_dict.get("graded", [])
+        graded = self._run_grade("unknown")
         prop_rows = [r for r in graded if str(r.get("ref", "")).startswith("PROP:")]
         for r in prop_rows:
             self.assertNotEqual(r["result"], "LOSS",

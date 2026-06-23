@@ -5850,6 +5850,133 @@ def resolve_missing_stat(
     return val, "scraped", 0.5
 
 
+def resolve_player_appearance(sport: str, game: dict[str, Any], player: str) -> str:
+    """Return the appearance tri-state for a player from the scraped box score.
+
+    GAP 1 / RESULTS-05: sibling to resolve_missing_stat, reuses the SAME per-event
+    cache so no additional subprocess budget is consumed.
+
+    Returns:
+        "played"  — player is present in the scraped box (confirmed appeared).
+        "dnp"     — player is absent AND the box was fully read (status=ok).
+                    Safe to grade VOID (no action).
+        "unknown" — scrape status=skip, cache missing, npx absent, budget exceeded,
+                    or name ambiguous. -> ABSTAIN; stay MANUAL REVIEW, never VOID.
+
+    Degrade contract (RESULTS-05): any failure/timeout/missing-binary/offline/429
+    -> "unknown". Never crashes, never raises.
+    """
+    global _NPX_PREFLIGHT_WARNED, _scrape_run_count
+
+    # Import the tri-state helper from verify_results (subprocess-isolated script).
+    # We import it at call time to avoid coupling at module level.
+    try:
+        import importlib.util as _ilu
+        _vr_path = SCRIPTS / "verify_results.py"
+        if not _vr_path.exists():
+            return "unknown"
+        _vr_spec = _ilu.spec_from_file_location("verify_results", _vr_path)
+        if _vr_spec is None or _vr_spec.loader is None:
+            return "unknown"
+        _vr_mod = _ilu.module_from_spec(_vr_spec)
+        _vr_spec.loader.exec_module(_vr_mod)  # type: ignore[union-attr]
+        _player_appearance = _vr_mod.player_appearance
+    except Exception as exc:
+        log(f"WARNING: resolve_player_appearance: failed to load verify_results: {exc}")
+        return "unknown"
+
+    # Step 1 — preflight: same as resolve_missing_stat.
+    if not shutil.which("npx") or not shutil.which("node"):
+        if not _NPX_PREFLIGHT_WARNED:
+            log("WARNING: resolve_player_appearance: npx or node not found on PATH; "
+                "appearance check disabled")
+            _NPX_PREFLIGHT_WARNED = True
+        return "unknown"
+
+    # Step 2 — game_id resolution.
+    event_id = str(game.get("event_id") or game.get("id") or "").strip()
+    if not event_id:
+        return "unknown"
+
+    # Step 3 — cache read (SAME cache as resolve_missing_stat — no extra subprocess).
+    results_cache_dir = DATA / "research" / "results_cache"
+    cache_file = results_cache_dir / f"{event_id}.json"
+    cached_envelope: dict[str, Any] | None = None
+    if cache_file.exists():
+        try:
+            data = json.loads(cache_file.read_text())
+            if data.get("status") == "ok":
+                cached_envelope = data
+        except Exception as exc:
+            log(f"WARNING: resolve_player_appearance: cache read failed for {event_id}: {exc}")
+
+    # Step 4 — cache miss: invoke verify_results.py (same path as resolve_missing_stat).
+    if cached_envelope is None:
+        # Budget check before firing a scrape.
+        if _scrape_run_count >= RESULT_SCRAPE_MAX_PER_RUN:
+            log(f"INFO: resolve_player_appearance: per-run scrape cap "
+                f"({RESULT_SCRAPE_MAX_PER_RUN}) reached; appearance unknown for {player}")
+            return "unknown"
+
+        verify_script = SCRIPTS / "verify_results.py"
+        if not verify_script.exists():
+            log(f"WARNING: resolve_player_appearance: verify_results.py not found at {verify_script}")
+            return "unknown"
+
+        cmd = [sys.executable, str(verify_script), "--sport", sport.lower(), "--game-id", event_id]
+        child_env = os.environ.copy()
+        api_key = env_value("FIRECRAWL_API_KEY")
+        if api_key:
+            child_env["FIRECRAWL_API_KEY"] = api_key
+
+        try:
+            cp = _subprocess_run_with_retry(
+                cmd,
+                timeout=RESULT_SCRAPE_TIMEOUT,
+                context=f"verify_results(appearance) {event_id}",
+                capture_output=True,
+                text=True,
+                env=child_env,
+            )
+        except Exception as exc:
+            log(f"WARNING: resolve_player_appearance: subprocess error for {event_id}: {exc}")
+            return "unknown"
+
+        _scrape_run_count += 1
+
+        envelope: dict[str, Any] | None = None
+        for line in (cp.stdout or "").splitlines():
+            if line.startswith("JSON_RESULT="):
+                try:
+                    envelope = json.loads(line[len("JSON_RESULT="):])
+                except Exception as exc:
+                    log(f"WARNING: resolve_player_appearance: JSON parse failed for {event_id}: {exc}")
+                break
+
+        if envelope is None:
+            log(f"WARNING: resolve_player_appearance: no JSON_RESULT for {event_id}")
+            return "unknown"
+
+        status = envelope.get("status")
+        if status == "ok":
+            # Cache the result (including absent-player cases — valid "not in box" signal).
+            try:
+                results_cache_dir.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(json.dumps(envelope, indent=2) + "\n")
+            except Exception as exc:
+                log(f"WARNING: resolve_player_appearance: cache write failed for {event_id}: {exc}")
+            cached_envelope = envelope
+        else:
+            # status=skip -> NOT cached (transient failure, may succeed next run).
+            reason = envelope.get("reason", "unknown")
+            log(f"INFO: resolve_player_appearance: verify_results skip for {event_id}: {reason}")
+            return "unknown"
+
+    # Step 5 — derive appearance tri-state from the cached box.
+    cached_players: dict[str, Any] = cached_envelope.get("players", {})
+    return _player_appearance(cached_players, player, "ok")
+
+
 def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = None, dry_run: bool = False) -> dict[str, Any]:
     date = date or today_str()
     sport_label = sport.upper()
@@ -5936,9 +6063,10 @@ def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = 
                 # resolve_missing_stat degrades to (None,"manual",0.0) on any failure.
                 if (ENABLE_FIRECRAWL_RESULT_FALLBACK
                         and _scrape_run_count < RESULT_SCRAPE_MAX_PER_RUN):
+                    _prop_player = str(row.get("Player Name") or "")
                     scraped_val, scraped_src, scraped_conf = resolve_missing_stat(
                         sport, game,
-                        str(row.get("Player Name") or ""),
+                        _prop_player,
                         str(row.get("Stat") or ""),
                     )
                     if scraped_src == "scraped" and scraped_val is not None:
@@ -5962,6 +6090,22 @@ def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = 
                             res_src, res_conf = "scraped", 0.5
                             # Remove from manual_reviews since we resolved it.
                         # If prop_line is None we stay MANUAL REVIEW — cannot grade.
+                    # GAP 1 / RESULTS-05: DNP detection.
+                    # When Layer-1 returned None AND stat is still unresolved, check
+                    # whether the player actually appeared in the game.
+                    # - "dnp"     -> VOID (no action; refund); scraped/1.0 provenance.
+                    # - "played"  -> stay MANUAL REVIEW (appeared; stat not derivable).
+                    # - "unknown" -> stay MANUAL REVIEW (abstain; do not guess).
+                    # NEVER produce LOSS/WIN from the no-stat-line path (T-01-G1-02).
+                    if result == "MANUAL REVIEW":
+                        _appearance = resolve_player_appearance(sport, game, _prop_player)
+                        if _appearance == "dnp":
+                            result = "VOID"
+                            actual = None
+                            note = (f"{_prop_player} DNP — no action (refunded)")
+                            res_src, res_conf = "scraped", 1.0
+                            pnl = 0.0
+                            # Not appended to manual_reviews (resolved).
                 if result == "MANUAL REVIEW":
                     manual_reviews.append({"player": row.get("Player Name"), "stat": row.get("Stat"), "game": game_label, "note": note})
             pnl = 0.0  # BANKROLL-01 / D-09: PROP rows carry no standalone bankroll PnL; Result carries accuracy signal; money is at the slip level (Slip History Net PnL only)

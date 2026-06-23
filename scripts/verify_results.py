@@ -124,6 +124,44 @@ def _canonical_name(name: Any) -> str:
     return " ".join(tokens)
 
 
+def player_appearance(players: dict[str, Any], player: Any, status: str) -> str:
+    """Tri-state appearance signal from a scraped box score (GAP 1 / RESULTS-05).
+
+    Returns:
+        "played"  — player is present in the box score (status="ok" + name matched)
+        "dnp"     — player is absent AND the box was fully read (status="ok")
+                    A status="ok" with an empty players dict counts as "dnp" (box read,
+                    player not listed).
+        "unknown" — scrape status is "skip"/error, or player name is empty/ambiguous
+                    -> ABSTAIN; do NOT grade anything from this signal alone.
+
+    Money-safety contract:
+        VOID grading requires "dnp" (confirmed absence).
+        "unknown" must stay MANUAL REVIEW — never coerce to VOID or LOSS.
+    """
+    # Empty or missing player name — ambiguous, abstain.
+    player_str = str(player or "").strip()
+    if not player_str:
+        return "unknown"
+
+    # Non-ok status (skip, error, etc.) — transient failure, abstain.
+    if status != "ok":
+        return "unknown"
+
+    # Box was fully read (status=ok). Check if the player appears.
+    # Use _canonical_name to normalise both sides for comparison.
+    canonical_player = _canonical_name(player_str)
+    if not canonical_player:
+        return "unknown"
+
+    for box_name in players:
+        if _canonical_name(box_name) == canonical_player:
+            return "played"
+
+    # status=ok, box fully read, player not found -> confirmed absent.
+    return "dnp"
+
+
 def _is_totals_row(cells: list[str]) -> bool:
     """Return True if this is a Totals/Team row (should be skipped)."""
     if not cells:
