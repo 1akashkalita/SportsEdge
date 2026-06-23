@@ -118,6 +118,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260621-ohh | fix send_slips_telegram urllib→requests SSL failure | 2026-06-22 | 2f245f5 | [260621-ohh-fix-send-slips-telegram-urllib-requests-](./quick/260621-ohh-fix-send-slips-telegram-urllib-requests-/) |
 | 260622-p7x | Slip generation: vetted-only legs (APPROVED + Gate-8 cap-held), single-platform, real Underdog/PrizePicks labels, dedup | 2026-06-22 | 0d6fded | [260622-p7x-slips-vetted-per-platform](./quick/260622-p7x-slips-vetted-per-platform/) |
+| 260623-lzi | Fix O(n²) read in skipped_picks_summary_for_date (single iter_rows pass) — kills recap/alert hang at ~1.5k Skipped Picks rows; + regression test; flagged runaway Skipped-Picks append (Pick Ref="MLB" ×1487) | 2026-06-23 | 1a8384e | [260623-lzi-fix-o-n-2-read-in-skipped-picks-summary-](./quick/260623-lzi-fix-o-n-2-read-in-skipped-picks-summary-/) |
 
 ## Deferred Items
 
