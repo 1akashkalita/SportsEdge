@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Slips & Props Tracking
-status: ready_to_plan
-stopped_at: Phase 03 complete (4/4) — ready to discuss Phase 4
-last_updated: 2026-06-23T04:19:49.759Z
-last_activity: 2026-06-22
+status: planning
+stopped_at: Phase 4 context gathered
+last_updated: "2026-06-23T05:16:37.105Z"
+last_activity: 2026-06-23
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 13
   completed_plans: 12
-  percent: 25
+  percent: 50
 ---
 
 # Project State
@@ -118,6 +118,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-22T00:00:00.000Z
-Stopped at: Phase 03 plan 04 complete — slips-only bankroll rebuilt and operator-approved; phase verification pending
-Resume file: None
+Last session: 2026-06-23T05:16:37.067Z
+Stopped at: Phase 4 context gathered
+Resume file: .planning/phases/04-dual-metrics-and-feedback/04-CONTEXT.md
