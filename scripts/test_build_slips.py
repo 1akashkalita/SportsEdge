@@ -12,7 +12,7 @@ import build_slips
 import audit_slips
 
 
-def projection(player, stat, p, ev, edge, tier='A', team='NYK', sport='NBA', line=10.5, sample=10):
+def projection(player, stat, p, ev, edge, tier='A', team='NYK', sport='NBA', line=10.5, sample=10, platform=None):
     row = {
         'sport': sport,
         'player_name': player,
@@ -26,7 +26,10 @@ def projection(player, stat, p, ev, edge, tier='A', team='NYK', sport='NBA', lin
         'confidence_tier': tier,
         'flags': [],
         'sample_size': sample,
+        'line_timing': 'pregame',
     }
+    if platform is not None:
+        row['platform'] = platform
     row['prop_id'] = corr.prop_id(row)
     return row
 
@@ -98,6 +101,71 @@ class BuildSlipsTests(unittest.TestCase):
         self.assertFalse(slip['combined_probability_is_exact'])
         self.assertIn('approximate', slip['combined_probability_note'].lower())
         self.assertIn('rho', slip['combined_probability_formula'])
+
+
+class VettedPerPlatformTests(unittest.TestCase):
+    """Slips must be vetted-only, single-platform, real-platform-labeled, and dedup'd."""
+
+    def setUp(self):
+        # Two Underdog props and two PrizePicks props, all eligible.
+        self.ud1 = projection('Udog One', 'hits', .80, .55, 4.0, team='AAA', sport='MLB', line=0.5, platform='Underdog')
+        self.ud2 = projection('Udog Two', 'hits runs rbis', .78, .50, 3.5, team='BBB', sport='MLB', line=1.5, platform='Underdog')
+        self.pp1 = projection('Pp One', 'strikeouts', .82, .60, 4.5, team='CCC', sport='MLB', line=5.5, platform='PrizePicks')
+        self.pp2 = projection('Pp Two', 'total bases', .79, .52, 3.8, team='DDD', sport='MLB', line=1.5, platform='PrizePicks')
+        self.both = [self.ud1, self.ud2, self.pp1, self.pp2]
+        self.correlation_payload = corr.analyze(self.both, '2026-06-22')
+
+    def _all_slips(self, payload):
+        out = []
+        for slips in payload['slips'].values():
+            out.extend(slips)
+        return out
+
+    def test_make_slip_uses_real_leg_platform(self):
+        pair_map = build_slips.correlation_lookup(corr.analyze([self.ud1, self.ud2], '2026-06-22'))
+        slip = build_slips.make_slip('safest_2_leg', 'Safest 2-leg', [self.ud1, self.ud2], pair_map, False, 'test')
+        self.assertEqual(slip['platform'], 'Underdog')
+
+    def test_no_slip_mixes_platforms(self):
+        payload = build_slips.build_slips(self.both, self.correlation_payload, '2026-06-22')
+        slips = self._all_slips(payload)
+        self.assertTrue(slips, 'expected at least one slip')
+        for slip in slips:
+            leg_platforms = {leg.get('platform') for leg in slip['legs']}
+            self.assertEqual(len(leg_platforms), 1, f"slip {slip['name']} mixes platforms: {leg_platforms}")
+            self.assertEqual(slip['platform'], next(iter(leg_platforms)))
+            self.assertIn(slip['platform'], {'Underdog', 'PrizePicks'})
+
+    def test_slip_has_no_duplicate_legs(self):
+        payload = build_slips.build_slips(self.both, self.correlation_payload, '2026-06-22')
+        for slip in self._all_slips(payload):
+            keys = [(leg['player_name'], leg['stat_type'], leg['line']) for leg in slip['legs']]
+            self.assertEqual(len(keys), len(set(keys)), f"slip {slip['name']} has duplicate legs: {keys}")
+
+    def test_platform_with_fewer_than_two_legs_emits_no_slip(self):
+        # PrizePicks has only one eligible prop -> no PrizePicks slip can form.
+        only_one_pp = [self.ud1, self.ud2, self.pp1]
+        payload = build_slips.build_slips(only_one_pp, corr.analyze(only_one_pp, '2026-06-22'), '2026-06-22')
+        for slip in self._all_slips(payload):
+            self.assertNotEqual(slip['platform'], 'PrizePicks',
+                                f"PrizePicks slip emitted from a single prop: {slip['name']}")
+
+    def test_filter_to_vetted_excludes_unmatched(self):
+        # vetted key matches projA but not projB (fail-safe excludes unmatched)
+        proj_a = projection('Match Me', 'hits', .80, .55, 4.0, sport='MLB', line=0.5, platform='Underdog')
+        proj_b = projection('Drop Me', 'hits', .80, .55, 4.0, sport='MLB', line=0.5, platform='Underdog')
+        vetted = {
+            'MLB': [{
+                'player': 'Match Me',
+                'line': 0.5,
+                'platform': 'Underdog',
+                'pick_text': 'Match Me Over 0.5 Hits',
+            }],
+        }
+        kept = build_slips.filter_to_vetted([proj_a, proj_b], vetted)
+        kept_names = {p['player_name'] for p in kept}
+        self.assertIn('Match Me', kept_names)
+        self.assertNotIn('Drop Me', kept_names)
 
 
 if __name__ == '__main__':
