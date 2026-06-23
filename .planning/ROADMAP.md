@@ -97,7 +97,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-03-PLAN.md — slips-only bankroll compute (sync_slip_bankroll) + sever prop coupling + Prop Accuracy summary (BANKROLL-01/04; D-09/D-10/D-13)
+- [x] 03-03-PLAN.md — slips-only bankroll compute (sync_slip_bankroll) + sever prop coupling + Prop Accuracy summary (BANKROLL-01/04; D-09/D-10/D-13)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -122,7 +122,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 1. Diagnosis | v1.0 | 5/6 | In Progress|  |
 | 2. Reliability Fixes + Defect Removal | v1.0 | 3/3 | Complete   | 2026-06-22 |
-| 3. Resilience | v1.0 | 2/4 | In Progress|  |
+| 3. Resilience | v1.0 | 3/4 | In Progress|  |
 | 4. Observability | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
