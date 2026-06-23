@@ -5897,10 +5897,10 @@ def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = 
             result, actual, note, pnl = "VOID", None, f"{game_label} {game.get('status_name')} — refunded", 0.0
         elif pick_type == "SPREAD":
             result, actual, note = grade_spread(row, final_game)
-            pnl = odds_profit(result, units, row.get("Odds"))
+            pnl = 0.0  # BANKROLL-01 / D-09: single-pick spread rows carry no standalone bankroll PnL; money is at the slip level (Slip History Net PnL only)
         elif pick_type == "TOTAL":
             result, actual, note = grade_total(row, final_game)
-            pnl = odds_profit(result, units, row.get("Odds"))
+            pnl = 0.0  # BANKROLL-01 / D-09: single-pick total rows carry no standalone bankroll PnL; money is at the slip level (Slip History Net PnL only)
         else:
             continue
         graded_at = now_iso()
@@ -5964,7 +5964,7 @@ def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = 
                         # If prop_line is None we stay MANUAL REVIEW — cannot grade.
                 if result == "MANUAL REVIEW":
                     manual_reviews.append({"player": row.get("Player Name"), "stat": row.get("Stat"), "game": game_label, "note": note})
-            pnl = odds_profit(result, units, None)
+            pnl = 0.0  # BANKROLL-01 / D-09: PROP rows carry no standalone bankroll PnL; Result carries accuracy signal; money is at the slip level (Slip History Net PnL only)
         graded_at = now_iso()
         clv_row = matching_clv_row(clv_rows, ref, "PROP", row.get("Selection"), row.get("Player Name"))
         rec = result_record_from_source(date, sport_label, row, ref, result, actual, units, pnl, graded_at, note, game_label, clv_row, {"Pick Type": "PROP", "Player/Team": row.get("Player Name"), "Pick": row.get("Selection"), "Platform": row.get("Platform") or "", "Confidence Tier": row.get("Confidence"), "Result Source": res_src, "Result Confidence": res_conf})

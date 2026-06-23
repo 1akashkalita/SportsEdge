@@ -54,6 +54,11 @@ _GAME = {
     "away_team": "Red Sox",
     "home_score": 5,
     "away_score": 3,
+    # Odds-API scores list required by final_scores() for spread/total grading
+    "scores": [
+        {"name": "Yankees", "score": "5"},
+        {"name": "Red Sox", "score": "3"},
+    ],
 }
 
 # Mookie Betts: Hits=3.0 → Over 2.5 = WIN; Walks=0.0 → Over 1.5 = LOSS
