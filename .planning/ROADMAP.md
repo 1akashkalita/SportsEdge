@@ -35,17 +35,21 @@ Audit: [milestones/v1.0-MILESTONE-AUDIT.md](./milestones/v1.0-MILESTONE-AUDIT.md
 ## Phase Details
 
 ### Phase 1: Trustworthy Results
+
 **Goal**: Every prop grade resolves correctly — name and stat mismatches no longer produce MANUAL REVIEW for recoverable stats, every graded row carries provenance, and the June 8–21 MANUAL REVIEW backlog is reduced to only the genuinely unresolvable residue
 **Depends on**: Nothing (first phase)
 **Requirements**: RESULTS-01, RESULTS-02, RESULTS-03, RESULTS-04, RESULTS-05, RESULTS-06, RESULTS-07
 **Success Criteria** (what must be TRUE):
+
   1. The June 8 dry-run gate passes: at least 80% of non-Fantasy-Score MANUAL REVIEW prop rows for that date resolve to WIN/LOSS/PUSH after Layer-1 hardening (the single pass/fail gate for Criterion #1 in the approved spec)
   2. Every prop row written by grading carries a populated `Result Source` (api / scraped / manual) and a numeric `Result Confidence` column; spread/total/parlay/VOID rows also carry these fields with api/1.0
   3. Re-grading a date with previously MANUAL REVIEW or PENDING rows overwrites them in place with terminal grades; rows already settled WIN/LOSS/PUSH/VOID (in any casing) are untouched, and no duplicate Results or Pick History rows appear
   4. A parlay is never mis-graded against a partial leg set: it abstains (stays at prior result) when any constituent leg is not yet terminal
   5. The firecrawl fallback (flag `ENABLE_FIRECRAWL_RESULT_FALLBACK`, default off) degrades to MANUAL REVIEW on any failure, timeout, missing binary, offline, or 429 — grading never crashes and every daily run stays under the 660s cron budget
+
 **Plans**: 6 plans
 Plans:
+
 - [x] 01-1-PLAN.md — Component 0: ESPN summary fixtures + stat_corpus oracle (testdata only)
 - [x] 01-2-PLAN.md — name_match + _canonical_name; batting/pitching namespace split + hit-type counts
 - [x] 01-3-PLAN.md — stat_value_for_prop disposition table (3-tuple) + provenance columns end-to-end
@@ -54,44 +58,62 @@ Plans:
 - [ ] 01-6-PLAN.md — June 8 ≥80% dry-run gate + June 8–21 backfill execution (human-verified)
 
 ### Phase 2: Slip Reconstruction and Grading
+
 **Goal**: The Slip History sheet is populated — the model's recommended slips are reconstructed per day, graded against trustworthy results from Phase 1, and backfilled across June 8–21 as a verifiable backtest
 **Depends on**: Phase 1
 **Requirements**: SLIPS-01, SLIPS-02, SLIPS-03, SLIPS-04
 **Success Criteria** (what must be TRUE):
+
   1. Running the daily picks flow automatically produces slip records in Slip History (legs, slip result, payout multiplier, gross return, net PnL) — the sheet is no longer empty after a daily run
   2. Each slip's grade is derived from the trustworthy P1 prop results — a slip with all WIN legs is WIN and a slip with any LOSS leg is LOSS; slip success and individual-prop success are stored as distinct metrics
   3. The June 8–21 Slip History backfill completes without duplicate rows: re-running on a date that already has slip records for that date is idempotent
   4. An operator can distinguish slip ROI from prop win-rate at a glance from the persisted sheets (separate tracking is demonstrably present, not interleaved)
+
 **Plans**: 3 plans
 Plans:
+
 - [x] 02-1-PLAN.md — Slip-leg grading core: date-wide box-score merge + per-leg WIN/LOSS/PUSH/abstain via reused P1 stat_value_for_prop
 - [x] 02-2-PLAN.md — Slip aggregation + payout (calculate_slip_payout) + idempotent Slip History upsert (per-day + master); PENDING-not-LOSS on any unresolved leg
 - [x] 02-3-PLAN.md — Build missing June 8–21 slip defs + idempotent backfill + grade_slips runner task; human-verified real-money write
 
 ### Phase 3: Slips-Only Bankroll
+
 **Goal**: The bankroll ledger reflects only what was actually staked and returned on DFS slips — individual prop outcomes are removed from the bankroll and preserved as a separate model-accuracy signal
 **Depends on**: Phase 2
 **Requirements**: BANKROLL-01, BANKROLL-02, BANKROLL-03, BANKROLL-04
 **Success Criteria** (what must be TRUE):
+
   1. The current bankroll balance is computed exclusively from slip Net PnL; re-running the bankroll calculation with no new slips produces the same balance (individual prop W/L rows have no effect on the balance)
   2. Each slip's stake is sized by confidence score — a higher-confidence slip has a larger stake than a lower-confidence slip from the same day under the same bankroll
   3. The bankroll history is rebased from 2026-06-08: the historical P&L chart reflects slip-based outcomes from inception, not prior prop-based accounting
   4. Prop W/L outcomes remain readable as a model-accuracy signal in a separate report or sheet, not eliminated
+
 **Plans**: 4 plans
 Plans:
+**Wave 1**
+
 - [ ] 03-01-PLAN.md — stake_sizing.py confidence-stake helper + unit tests (BANKROLL-02; D-01..D-06)
 - [ ] 03-02-PLAN.md — Gate-8 exposure-cap removal + test_dynamic_gate8 update; concentration caps preserved (D-07/D-08)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-03-PLAN.md — slips-only bankroll compute (sync_slip_bankroll) + sever prop coupling + Prop Accuracy summary (BANKROLL-01/04; D-09/D-10/D-13)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 03-04-PLAN.md — one-time rebuild + in-place re-stake from 2026-06-08, human-verified real-money write (BANKROLL-03; D-11/D-12/D-14)
 
 ### Phase 4: Dual Metrics and Feedback
+
 **Goal**: The operator can answer "is the model improving?" from data — slip ROI and prop hit-rate are surfaced over time by week and sport, and realized outcomes flow back into projection/gate tuning through a bounded, integrity-safe feedback loop
 **Depends on**: Phase 3
 **Requirements**: METRICS-01, METRICS-02, METRICS-03
 **Success Criteria** (what must be TRUE):
+
   1. A report (Telegram message or Obsidian note) shows slip ROI and prop hit-rate broken down by week and by sport (NBA / MLB), enabling "improving vs stagnant" as a data-driven answer
   2. Realized slip and prop outcomes feed back into the projection or gate configuration in a bounded, observable way — at least one tunable parameter is updated by outcomes
   3. The feedback loop cannot retroactively alter any graded verdict (WIN/LOSS/PUSH/VOID) and cannot modify no-bet gate logic or pick output verdicts — the integrity of grading and the gate gauntlet is preserved by design, confirmed by a test
+
 **Plans**: TBD
 
 ## Progress
