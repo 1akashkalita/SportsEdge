@@ -12,7 +12,7 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 - [x] **RESULTS-04**: Every graded prop row records `Result Source` (api / scraped / manual) and a numeric `Result Confidence` (additive schema columns).
 - [x] **RESULTS-05**: A feature-flagged, keyless, subprocess-isolated firecrawl fallback resolves residual unresolved stats by scraping the box score, and degrades safely to MANUAL REVIEW on any failure/timeout/offline/rate-limit without crashing grading.
 - [x] **RESULTS-06**: Backfill re-grading replaces MANUAL REVIEW / PENDING rows with terminal grades in place — no duplicate Results/Pick-History rows, settled WIN/LOSS/PUSH/VOID rows untouched, and no parlay mis-grade from partial leg sets.
-- [ ] **RESULTS-07**: The June 8–21 MANUAL-REVIEW backlog is recovered to the measured achievable rate (hard gate: ≥80% of non-Fantasy-Score MANUAL-REVIEW prop rows resolve on the June 8 dry-run).
+- [x] **RESULTS-07**: The June 8–21 MANUAL-REVIEW backlog is recovered to the measured achievable rate (hard gate: ≥80% of non-Fantasy-Score MANUAL-REVIEW prop rows resolve on the June 8 dry-run).
 
 ### SLIPS — Reconstruct, grade, record (Phase 2 / P2)
 
@@ -58,7 +58,7 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 | RESULTS-04 | Phase 1 | Complete |
 | RESULTS-05 | Phase 1 | Complete |
 | RESULTS-06 | Phase 1 | Complete |
-| RESULTS-07 | Phase 1 | Pending |
+| RESULTS-07 | Phase 1 | Complete |
 | SLIPS-01 | Phase 2 | Complete |
 | SLIPS-02 | Phase 2 | Complete |
 | SLIPS-03 | Phase 2 | Pending |

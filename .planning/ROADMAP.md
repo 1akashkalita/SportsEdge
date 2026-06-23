@@ -60,13 +60,13 @@ Plans:
 **Gap-closure plans** (from 01-UAT.md — 4 diagnosed grading defects; run via `/gsd:execute-phase 1 --gaps-only`):
 **Wave 1** *(parallel — no file overlap)*
 - [x] 01-7-PLAN.md — GAP 4: prop PnL = slip-terms-only (PROP + single-pick PnL=0; bankroll slips-only, BANKROLL-01)
-- [ ] 01-8-PLAN.md — GAP 3: idempotent June 8 dry-run gate (pinned pre-backfill snapshot denominator; DNP→VOID excluded, RESULTS-07)
+- [x] 01-8-PLAN.md — GAP 3: idempotent June 8 dry-run gate (pinned pre-backfill snapshot denominator; DNP→VOID excluded, RESULTS-07)
 **Wave 2** *(serialized on sports_system_runner.py after 01-7)*
 - [ ] 01-9-PLAN.md — GAP 1: DNP→VOID auto-detection in the Layer-2 lane (abstain on undetermined; never auto-LOSS, RESULTS-05/06)
 **Wave 3** *(serialized on sports_system_runner.py after 01-9)*
 - [x] 01-10-PLAN.md — GAP 2: PrizePicks+Underdog Fantasy-Score formulas + platform disambiguation (abstain on PP/UD disagreement, RESULTS-02/07)
 **Wave 4** *(blocked on 01-7..01-10)*
-- [ ] 01-11-PLAN.md — Full-suite regression gate: 4 gap tests green, june8 gate now PASS, baseline unchanged (human-verified)
+- [x] 01-11-PLAN.md — Full-suite regression gate: 4 gap tests green, june8 gate now PASS, baseline unchanged (human-verified)
 
 ### Phase 2: Slip Reconstruction and Grading
 
@@ -140,7 +140,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Diagnosis | v1.0 | 6/11 | In Progress|  |
+| 1. Diagnosis | v1.0 | 7/11 | In Progress|  |
 | 2. Reliability Fixes + Defect Removal | v1.0 | 3/3 | Complete   | 2026-06-22 |
 | 3. Resilience | v1.0 | 3/4 | In Progress|  |
 | 4. Observability | v1.0 | 3/3 | Complete   | 2026-06-23 |

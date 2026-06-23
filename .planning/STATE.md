@@ -4,13 +4,13 @@ milestone: v2.0
 milestone_name: Slips & Props Tracking
 status: executing
 stopped_at: Phase 04.1 context gathered
-last_updated: "2026-06-23T21:13:19.212Z"
+last_updated: "2026-06-23T21:19:58.269Z"
 last_activity: 2026-06-23
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 24
-  completed_plans: 20
+  completed_plans: 21
   percent: 80
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-22)
 ## Current Position
 
 Phase: 01 (trustworthy-results) — EXECUTING
-Plan: 2 of 11
+Plan: 3 of 11
 Status: Ready to execute
 Last activity: 2026-06-23
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [████████░░] 83%
 | Phase 04-dual-metrics-and-feedback P02 | 320 | 2 tasks | 2 files |
 | Phase 04-dual-metrics-and-feedback P03 | 30 | 3 tasks | 3 files |
 | Phase 04.1 P01 | 8min | 2 tasks | 2 files |
+| Phase 01-trustworthy-results P8 | 217 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,7 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 01-5: Layer-2 flag default OFF; enable after smoke test confirms keyless firecrawl-cli@1.19.2
 - [Phase 03, Plan 04]: Slips-only bankroll rebuilt from 2026-06-08 with starting_bankroll=100; live current_bankroll=126.778 (66 slips, 12 dates); 22 MANUAL REVIEW slips excluded (D-13); wipe-scope defect found+fixed (539cbdf) — wipe must cover full inception-onward range, not just slip-dates
 - [Phase 03, Plan 04]: rebuild_bankroll task wired (660s budget, master_pnl.xlsx cooperative lock); one-time operator-authorized live write confirmed idempotent on second run
+- [Phase 01, Plan 08]: Snapshot reconstructed from earliest backup (2026-06-22 012123); 37 rows exact pre-backfill non-Fantasy set, none fabricated; DNP rows marked dnp_void:true excluded from denominator (never Layer-1-recoverable)
 
 ### Pending Todos
 
@@ -129,6 +131,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-23T21:13:19.174Z
+Last session: 2026-06-23T21:19:58.235Z
 Stopped at: Phase 04.1 context gathered
 Resume file: None
