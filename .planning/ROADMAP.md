@@ -77,7 +77,12 @@ Plans:
   2. Each slip's stake is sized by confidence score — a higher-confidence slip has a larger stake than a lower-confidence slip from the same day under the same bankroll
   3. The bankroll history is rebased from 2026-06-08: the historical P&L chart reflects slip-based outcomes from inception, not prior prop-based accounting
   4. Prop W/L outcomes remain readable as a model-accuracy signal in a separate report or sheet, not eliminated
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 03-01-PLAN.md — stake_sizing.py confidence-stake helper + unit tests (BANKROLL-02; D-01..D-06)
+- [ ] 03-02-PLAN.md — Gate-8 exposure-cap removal + test_dynamic_gate8 update; concentration caps preserved (D-07/D-08)
+- [ ] 03-03-PLAN.md — slips-only bankroll compute (sync_slip_bankroll) + sever prop coupling + Prop Accuracy summary (BANKROLL-01/04; D-09/D-10/D-13)
+- [ ] 03-04-PLAN.md — one-time rebuild + in-place re-stake from 2026-06-08, human-verified real-money write (BANKROLL-03; D-11/D-12/D-14)
 
 ### Phase 4: Dual Metrics and Feedback
 **Goal**: The operator can answer "is the model improving?" from data — slip ROI and prop hit-rate are surfaced over time by week and sport, and realized outcomes flow back into projection/gate tuning through a bounded, integrity-safe feedback loop
@@ -100,5 +105,5 @@ Plans:
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
 | 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
 | 2. Slip Reconstruction and Grading | v2.0 | 0/3 | Planned | - |
-| 3. Slips-Only Bankroll | v2.0 | 0/TBD | Not started | - |
+| 3. Slips-Only Bankroll | v2.0 | 0/4 | Planned | - |
 | 4. Dual Metrics and Feedback | v2.0 | 0/TBD | Not started | - |
