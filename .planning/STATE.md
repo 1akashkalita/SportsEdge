@@ -4,8 +4,8 @@ milestone: v2.0
 milestone_name: Slips & Props Tracking
 status: executing
 stopped_at: Phase 04.1 context gathered
-last_updated: "2026-06-23T10:49:18.314Z"
-last_activity: 2026-06-23 -- Phase 04.1 planning complete
+last_updated: "2026-06-23T10:50:58.624Z"
+last_activity: 2026-06-23 -- Phase 04.1 execution started
 progress:
   total_phases: 5
   completed_phases: 3
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-22)
 
 **Core value:** Make the bankroll reflect actual DFS slips, track and grade both slips and props, and feed realized outcomes back into selection — so the operator can tell whether the model is improving.
-**Current focus:** Phase 04.1 — close v2.0 audit gaps (forward staking, prop-accuracy refresh, calibration cleanup, P1/P2 verification debt)
+**Current focus:** Phase 04.1 — close-v2-0-audit-gaps-forward-confidence-staking-bankroll-02
 
 ## Current Position
 
-Phase: 04.1
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-23 -- Phase 04.1 planning complete
+Phase: 04.1 (close-v2-0-audit-gaps-forward-confidence-staking-bankroll-02) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 04.1
+Last activity: 2026-06-23 -- Phase 04.1 execution started
 
 Progress: [█████████░] 94%
 
