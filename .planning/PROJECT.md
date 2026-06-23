@@ -24,6 +24,8 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 
 **Shipped v1.0 — Stability Hardening (2026-06-22):** 5 phases / 17 plans, 16/16 v1 requirements satisfied. The broken-pipe `TASK FAILED` is eliminated, cron timeouts are root-caused and bounded (660s SIGALRM budget under a 720s cron ceiling), and a resilience + observability + CI safety net guards every fix. Milestone audit: `tech_debt` (no blockers). Outstanding before the system is fully "trusted in production": 5 live-environment human-UAT confirmations + optional Nyquist/hardening follow-ups (see STATE.md → Deferred Items). **Next milestone:** model/accuracy work — the explicit "after stability" goal — once the live UAT confirms the hardening on the real cron host. Start with `/gsd-new-milestone`.
 
+**v2.0 — Slips & Props Tracking (in progress):** Phase 1 (trustworthy results) and Phase 2 (slip reconstruction + grading) are complete; **Phase 3 — Slips-Only Bankroll is complete (2026-06-22).** The bankroll ledger is now sourced exclusively from DFS slip Net PnL with confidence-scaled stakes (`stake_sizing.confidence_stake`), the prop→bankroll coupling is severed (`sync_slip_bankroll` owns `bankroll.json` / Daily Log / Bankroll Chart Data and runs on the daily grade path), prop W/L is preserved as a separate `Prop Accuracy` sheet, the Gate-8 *global* exposure caps were removed (concentration caps + the no-bet gauntlet preserved unchanged), and the historical ledger was rebased from inception (2026-06-08) onto a slips-only basis (100 → 126.778, idempotent, backed up). Next: Phase 4 — dual metrics + a bounded outcome→selection feedback loop.
+
 ## Requirements
 
 ### Validated
@@ -118,4 +120,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-22 after v1.0 Stability Hardening milestone close — archived to milestones/, tagged v1.0 (17/17 plans, 16/16 requirements validated; audit status tech_debt, no blockers)*
+*Last updated: 2026-06-22 after v2.0 Phase 3 (Slips-Only Bankroll) complete — bankroll rebased to a slips-only basis from 2026-06-08 (BANKROLL-01..04 validated). Prior: v1.0 Stability Hardening milestone close — archived to milestones/, tagged v1.0 (17/17 plans, 16/16 requirements validated; audit status tech_debt, no blockers)*
