@@ -81,3 +81,12 @@ skipped: 0
   test: 2
   artifacts: [scripts/test_june8_dryrun_gate.py]
   missing: [idempotent gate measurement]
+
+- truth: "Prop-level PnL is never a standalone money figure — money is realized only at the slip level"
+  status: failed
+  reason: "Operator directive (2026-06-23): you cannot put money on a single prop — DFS requires a multi-leg slip. The grader writes a standalone per-prop PnL (existing rows show +0.909 / -1.0). That is conceptually wrong post-P3 (BANKROLL-01: props are accuracy-only, bankroll is slips-only). Prop PnL must be 0; real money PnL belongs to Slip History only."
+  severity: major
+  fix: "In result grading, set individual prop PnL = 0 (Result/WIN/LOSS carries the accuracy signal; money PnL is computed only by grade_slips at the slip level). Applies to PROP rows; SPREAD/TOTAL single-pick rows likewise carry no standalone bankroll PnL unless part of a staked slip. Confirm nothing downstream reads prop-row PnL into the bankroll (sync_slip_bankroll already sources from Slip History only — D-09)."
+  test: 4
+  artifacts: [scripts/sports_system_runner.py]
+  missing: [prop PnL = 0 / slip-terms-only accounting]
