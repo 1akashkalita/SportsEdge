@@ -4315,8 +4315,189 @@ def _canon_stat(stat: str) -> str:
     return s
 
 
+# ============================================================================
+# GAP 2 — Fantasy Score derivation helpers (RESULTS-02 / RESULTS-07)
+# Locked scoring tables (operator-supplied):
+#   HITTER (PP and UD): Single 3.0, Double 5.0, Triple 8.0, HR 10.0,
+#     R 2.0, RBI 2.0, BB 2.0, HBP 2.0; SB = PrizePicks 5.0 / Underdog 4.0.
+#   PITCHER (PP and UD): Out 1.0, K 3.0, ER -3.0;
+#     Win = PP 6.0 / UD 5.0; QS (>=6 IP AND <=3 ER) = PP 4.0 / UD 5.0.
+# ============================================================================
+
+def _prop_platform(source_row: dict[str, Any] | None) -> str:
+    """Recover platform intent from the source prop row.
+
+    Inspects row["Platform"] then row["Reasoning"].  Returns:
+      "prizepicks" | "underdog" | "unknown"
+    Results rows are tagged generic "DFS" — the original source row is needed.
+    GAP 2 — RESULTS-02.
+    """
+    if source_row is None:
+        return "unknown"
+    platform_field = str(source_row.get("Platform") or "").strip().lower()
+    if platform_field in ("prizepicks", "pp", "prize picks", "prize_picks"):
+        return "prizepicks"
+    if platform_field in ("underdog", "ud", "underdog fantasy"):
+        return "underdog"
+    reasoning = str(source_row.get("Reasoning") or "").strip().lower()
+    if "prizepicks" in reasoning or "prize picks" in reasoning:
+        return "prizepicks"
+    if "underdog" in reasoning:
+        return "underdog"
+    return "unknown"
+
+
+def _hitter_fantasy_score(
+    bat: dict[str, Any], platform: str
+) -> tuple[float | None, bool]:
+    """Compute MLB hitter fantasy score from batting box components.
+
+    LOCKED table (GAP 2 / RESULTS-02):
+      Single 3.0, Double 5.0, Triple 8.0, HR 10.0, R 2.0, RBI 2.0, BB 2.0, HBP 2.0
+      SB = PrizePicks 5.0 / Underdog 4.0.
+    Singles derived as: hits - doubles - triples - home_runs (when _hit_counts lacks "single").
+    HBP: NOT in ESPN summary box — use if explicitly provided; otherwise treat as 0 ONLY when
+      no HBP-capable data source is attached (treat summary box absence as confirmed-0 for HBP).
+    SB: NOT in standard summary box; only include when explicitly provided (key "stolen_bases").
+      If absent, treat as 0 (confirmed-0 when no SB data present).
+
+    Returns (score, used_divergent) where used_divergent=True iff a non-zero SB contributed
+    (SB is the only divergent hitter component between PP and UD).
+    Returns (None, False) when required components are unavailable.
+    """
+    # --- Hit-type counts: required for computing singles/doubles/triples/HR ---
+    hc = bat.get("_hit_counts")
+    hits = bat.get("hits")
+    if hc and isinstance(hc, dict) and (hc.get("single") is not None or
+                                         hc.get("double") is not None or
+                                         hc.get("triple") is not None or
+                                         hc.get("home-run") is not None):
+        singles = float(hc.get("single") or 0)
+        doubles = float(hc.get("double") or 0)
+        triples = float(hc.get("triple") or 0)
+        hrs = float(hc.get("home-run") or 0)
+    elif hits is not None:
+        # Derive singles from component counts when _hit_counts["single"] absent.
+        doubles = float(bat.get("homeruns") or 0)  # reuse homeruns as fallback
+        # Actually need doubles/triples separately from bat keys
+        raw_doubles = bat.get("doubles") or bat.get("2b")
+        raw_triples = bat.get("triples") or bat.get("3b")
+        raw_hrs = bat.get("homeruns") or bat.get("hr")
+        if raw_doubles is None or raw_triples is None or raw_hrs is None:
+            # Cannot reliably derive singles without hit breakdown — abstain
+            return (None, False)
+        doubles = float(raw_doubles)
+        triples = float(raw_triples)
+        hrs = float(raw_hrs)
+        singles = float(hits) - doubles - triples - hrs
+        if singles < 0:
+            singles = 0.0
+    else:
+        # No hit data at all — abstain
+        return (None, False)
+
+    # --- Other batting components from summary box (always present when box available) ---
+    runs = bat.get("runs")
+    rbis = bat.get("rbis")
+    bb = bat.get("walks")
+    if runs is None or rbis is None or bb is None:
+        return (None, False)
+    runs = float(runs)
+    rbis = float(rbis)
+    bb = float(bb)
+
+    # --- HBP: not in summary box; treat as confirmed-0 when absent ---
+    hbp = float(bat.get("hbp") or bat.get("hit_by_pitch") or 0)
+
+    # --- SB: not in standard summary box; present only when Layer-2 scrape provided it ---
+    sb_raw = bat.get("stolen_bases") or bat.get("sb")
+    sb = float(sb_raw) if sb_raw is not None else 0.0
+    used_divergent = (sb > 0)
+
+    # --- SB weight by platform ---
+    sb_weight = 5.0 if platform != "underdog" else 4.0
+
+    score = (
+        singles * 3.0
+        + doubles * 5.0
+        + triples * 8.0
+        + hrs * 10.0
+        + runs * 2.0
+        + rbis * 2.0
+        + bb * 2.0
+        + hbp * 2.0
+        + sb * sb_weight
+    )
+    return (score, used_divergent)
+
+
+def _pitcher_fantasy_score(
+    pit: dict[str, Any], platform: str
+) -> tuple[float | None, bool]:
+    """Compute MLB pitcher fantasy score from pitching box components.
+
+    LOCKED table (GAP 2 / RESULTS-02):
+      Out 1.0 (= 3 per full IP), K 3.0, ER -3.0
+      Win = PP 6.0 / UD 5.0; QS (>=6 IP AND <=3 ER) = PP 4.0 / UD 5.0.
+    Outs derived via _innings_to_outs_grading(pit["fullinnings.partinnings"]).
+    QS derived: outs >= 18 AND earnedruns <= 3.
+    Win: NOT in standard summary box; present only when Layer-2 scrape provided it.
+
+    Returns (score, used_divergent) where used_divergent=True iff a Win or QS component
+    contributed a non-zero value (Win and QS weights differ between PP and UD).
+    Returns (None, False) when required components (outs or K or ER) are unavailable.
+    """
+    # --- Outs: required ---
+    raw_ip = pit.get("fullinnings.partinnings")
+    outs = _innings_to_outs_grading(raw_ip)
+    if outs is None:
+        return (None, False)
+
+    # --- Strikeouts and earned runs: required ---
+    k_raw = pit.get("strikeouts")
+    er_raw = pit.get("earnedruns")
+    if k_raw is None or er_raw is None:
+        return (None, False)
+    k = float(k_raw)
+    er = float(er_raw)
+
+    # --- QS: derived (outs >= 18 AND earned runs <= 3) ---
+    qs = 1 if (outs >= 18 and er <= 3) else 0
+
+    # --- Win: not in standard summary box; present only when Layer-2 scrape provided it ---
+    win_raw = pit.get("pitcher_win") or pit.get("win")
+    win = float(win_raw) if win_raw is not None else 0.0
+
+    # used_divergent: Win and QS have different PP/UD weights
+    used_divergent = (qs > 0 or win > 0)
+
+    # --- Platform-specific weights ---
+    win_weight = 6.0 if platform != "underdog" else 5.0
+    qs_weight = 4.0 if platform != "underdog" else 5.0
+
+    score = (
+        outs * 1.0
+        + k * 3.0
+        + er * (-3.0)
+        + win * win_weight
+        + qs * qs_weight
+    )
+    return (score, used_divergent)
+
+
+def _fantasy_grade_direction(actual: float, line: float, side: str) -> str:
+    """Apply the over-rule to compute a grade string for disambiguation."""
+    diff = actual - line
+    if diff == 0:
+        return "PUSH"
+    if side == "Under":
+        return "WIN" if diff < 0 else "LOSS"
+    return "WIN" if diff > 0 else "LOSS"
+
+
 def stat_value_for_prop(
-    player_stats: dict[str, Any], player: str, stat: str
+    player_stats: dict[str, Any], player: str, stat: str,
+    source_row: dict[str, Any] | None = None,
 ) -> tuple[float | None, str, float]:
     """Resolve a prop player+stat to a box-score value with provenance.
 
@@ -4402,8 +4583,10 @@ def stat_value_for_prop(
         "1st inn. runs allowed", "1st inn. hits allowed",
         "1st inn. strikeouts", "1st inn. pitch count", "1st inn. batters faced",
         "1-3 inn. runs allowed",
-        # MLB fantasy / platform-specific
-        "hitter fantasy score", "pitcher fantasy score",
+        # MLB fantasy / platform-specific: "hitter fantasy score" and
+        # "pitcher fantasy score" are REMOVED from here — they are now routed
+        # to _hitter_fantasy_score / _pitcher_fantasy_score below (GAP 2).
+        # NBA "fantasy score" / "fantasy points" remain NOT-DERIVABLE (out of scope).
         # MLB two-player combo
         "pitcher strikeouts (combo)",
         # MLB stats not in box (play-by-play only)
@@ -4615,6 +4798,66 @@ def stat_value_for_prop(
             return _MANUAL
         return _derived(float(h) + float(r) + float(rbi))
 
+    # ================================================================
+    # MLB Fantasy Score derivation — GAP 2 / RESULTS-02 / RESULTS-07
+    # ================================================================
+    # Hitter Fantasy Score: single*3 + double*5 + triple*8 + HR*10 + R*2 + RBI*2
+    #   + BB*2 + HBP*2 + SB*(PP5/UD4)
+    # Pitcher Fantasy Score: outs*1 + K*3 + ER*(-3) + Win*(PP6/UD5) + QS*(PP4/UD5)
+    #   where QS = outs>=18 AND ER<=3
+    # Platform disambiguation: when platform is unknown AND scores disagree AND the
+    # two formulas yield different grades vs the line -> ABSTAIN (MANUAL REVIEW).
+    # ================================================================
+    if s in ("hitter fantasy score", "pitcher fantasy score"):
+        platform = _prop_platform(source_row)
+        conf_base = 0.8 if name_conf_exact else 0.6
+
+        if s == "hitter fantasy score":
+            score_fn = _hitter_fantasy_score
+            components = bat
+        else:
+            score_fn = _pitcher_fantasy_score
+            components = pit
+
+        if platform != "unknown":
+            # Platform known: compute directly.
+            score, _used_div = score_fn(components, platform)
+            if score is None:
+                return _MANUAL
+            # Provenance: "api" (summary box); SB/Win may come from Layer-2 scrape
+            # (stored in bat/pit by resolve_missing_stat — treat same as api here).
+            return (score, "api", conf_base)
+
+        # Platform unknown: compute under both PP and UD, then compare grades.
+        score_pp, used_div_pp = score_fn(components, "prizepicks")
+        score_ud, used_div_ud = score_fn(components, "underdog")
+        if score_pp is None or score_ud is None:
+            return _MANUAL
+        # If neither formula uses a divergent component, the scores are identical.
+        # If scores are equal, grades always agree — safe to grade.
+        if score_pp == score_ud:
+            return (score_pp, "api", conf_base)
+        # Scores differ (divergent component present). Need to compare grades vs the line.
+        # The line is in source_row["Line"] if provided.
+        prop_line = None
+        if source_row is not None:
+            prop_line = to_float(source_row.get("Line"))
+        if prop_line is None:
+            # Line unavailable — cannot compare grades safely -> ABSTAIN.
+            return _MANUAL
+        # Determine side ("Over" by default for fantasy score props).
+        side = "Under"
+        opp_desc = str(source_row.get("Opponent/Description") or "") if source_row else ""
+        if " under " not in f" {opp_desc.lower()} ":
+            side = "Over"
+        grade_pp = _fantasy_grade_direction(score_pp, prop_line, side)
+        grade_ud = _fantasy_grade_direction(score_ud, prop_line, side)
+        if grade_pp == grade_ud:
+            # Grades agree under both weightings — safe to grade.
+            return (score_pp, "api", conf_base)
+        # Grades disagree — money-safe abstain (MANUAL REVIEW).
+        return _MANUAL
+
     # Unrecognised MLB stat — NOT-DERIVABLE (do NOT substring-fall-through)
     return _MANUAL
 
@@ -4642,7 +4885,7 @@ def grade_prop(
     selection = str(row.get("Opponent/Description") or "")
     if line is None:
         return "PENDING", None, "Missing prop line", "manual", 0.0
-    actual_val, src, conf = stat_value_for_prop(player_stats, player, stat)
+    actual_val, src, conf = stat_value_for_prop(player_stats, player, stat, source_row=row)
     if actual_val is None:
         return "PENDING", None, f"No final stat line found for {player} {stat}", "manual", 0.0
     # Side recovery with abstain-on-ambiguity policy (01-4 Change 3).

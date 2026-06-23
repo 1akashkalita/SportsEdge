@@ -582,11 +582,24 @@ class TestMLBNotDerivable(unittest.TestCase):
     def test_1_3_inn_runs_allowed_not_derivable(self) -> None:
         self._assert_not_derivable("will vest", "1-3 Inn. Runs Allowed")
 
-    def test_hitter_fantasy_score_not_derivable(self) -> None:
-        self._assert_not_derivable("freddie freeman", "Hitter Fantasy Score")
+    def test_hitter_fantasy_score_now_derivable(self) -> None:
+        """GAP 2: Hitter Fantasy Score is now derivable (removed from NOT-DERIVABLE).
+        Without a source_row the platform is 'unknown'; with no SB component the two
+        formulas agree and the score is returned rather than MANUAL."""
+        val, src, conf = stat_value_for_prop(_MLB_PLAYER_STATS, "freddie freeman", "Hitter Fantasy Score")
+        # single=1,double=0,triple=0,HR=1,R=1,RBI=1,BB=0 => 3+0+0+10+2+2+0 = 17.0
+        self.assertEqual(val, 17.0, f"Hitter Fantasy Score should be derivable (17.0), got {val}")
+        self.assertEqual(src, "api")
+        self.assertGreater(conf, 0.0)
 
-    def test_pitcher_fantasy_score_not_derivable(self) -> None:
-        self._assert_not_derivable("will vest", "Pitcher Fantasy Score")
+    def test_pitcher_fantasy_score_ambiguous_abstains(self) -> None:
+        """GAP 2: Pitcher Fantasy Score with QS but unknown platform and no line -> ABSTAIN.
+        QS causes PP/UD score divergence; without a line the grade comparison cannot be done."""
+        val, src, conf = stat_value_for_prop(_MLB_PLAYER_STATS, "will vest", "Pitcher Fantasy Score")
+        # will vest: 20 outs, K=7, ER=2, QS=yes -> PP=39, UD=40 diverge; no line -> abstain
+        self.assertIsNone(val, f"QS + no line -> should abstain, got {val}")
+        self.assertEqual(src, "manual")
+        self.assertEqual(conf, 0.0)
 
     def test_mlb_fantasy_points_not_derivable(self) -> None:
         self._assert_not_derivable("freddie freeman", "Fantasy Points")
@@ -653,7 +666,9 @@ class TestStatCorpusDispositions(unittest.TestCase):
         "1-3 Inn. Runs Allowed", "1st Inn. Batters Faced", "1st Inn. Hits Allowed",
         "1st Inn. Pitch Count", "1st Inn. Runs Allowed", "1st Inn. Strikeouts",
         "1st Inning Runs Allowed", "1st Inning Walks Allowed",
-        "Fantasy Points", "Hitter Fantasy Score", "Pitcher Fantasy Score",
+        "Fantasy Points",
+        # GAP 2: "Hitter Fantasy Score" and "Pitcher Fantasy Score" are now
+        # derivable — removed from NOT-DERIVABLE set. See test_fantasy_score.py.
         "Pitcher Strikeouts (Combo)",
         "Stolen Bases", "Plate Appearances",
     }

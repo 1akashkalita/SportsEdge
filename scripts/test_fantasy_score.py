@@ -138,7 +138,7 @@ class TestHitterFantasyScoreBasic(unittest.TestCase):
     def test_hitter_pp_no_sb_exact_score(self) -> None:
         """PrizePicks: 1S*3 + 1D*5 + 1HR*10 + 1R*2 + 2RBI*4 + 1BB*2 = 26.0"""
         row = _make_row(reasoning="PrizePicks baseline", line=24.5)
-        val, src, conf = stat_value_for_prop(_HITTER_STATS, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_HITTER_BASE,
                          f"Expected {_EXPECTED_HITTER_BASE}, got {val}")
         self.assertNotEqual(src, "manual", "Should be derivable, not manual")
@@ -147,7 +147,7 @@ class TestHitterFantasyScoreBasic(unittest.TestCase):
     def test_hitter_ud_no_sb_exact_score(self) -> None:
         """Underdog: same table as PP when no SB. Score = 26.0."""
         row = _make_row(reasoning="Underdog value", line=24.5)
-        val, src, conf = stat_value_for_prop(_HITTER_STATS, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_HITTER_BASE,
                          f"Expected {_EXPECTED_HITTER_BASE}, got {val}")
         self.assertNotEqual(src, "manual")
@@ -155,14 +155,14 @@ class TestHitterFantasyScoreBasic(unittest.TestCase):
     def test_hitter_pp_with_sb_score(self) -> None:
         """PrizePicks with SB: base 26 + SB*5 = 31.0"""
         row = _make_row(reasoning="PrizePicks baseline", line=29.5)
-        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_HITTER_PP_SB,
                          f"Expected {_EXPECTED_HITTER_PP_SB} (PP+SB), got {val}")
 
     def test_hitter_ud_with_sb_score(self) -> None:
         """Underdog with SB: base 26 + SB*4 = 30.0"""
         row = _make_row(reasoning="Underdog value", line=29.5)
-        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_HITTER_UD_SB,
                          f"Expected {_EXPECTED_HITTER_UD_SB} (UD+SB), got {val}")
 
@@ -174,7 +174,7 @@ class TestPitcherFantasyScoreBasic(unittest.TestCase):
         """PP: 18 outs + 7K*3 + 2ER*(-3) + QS*4 = 37.0"""
         row = _make_row(reasoning="PrizePicks baseline", stat="Pitcher Fantasy Score",
                         player="gerrit cole", line=35.0)
-        val, src, conf = stat_value_for_prop(_PITCHER_STATS, "gerrit cole", "Pitcher Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_PITCHER_STATS, "gerrit cole", "Pitcher Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_PITCHER_PP_QS,
                          f"Expected {_EXPECTED_PITCHER_PP_QS} (PP QS), got {val}")
         self.assertNotEqual(src, "manual")
@@ -183,7 +183,7 @@ class TestPitcherFantasyScoreBasic(unittest.TestCase):
         """UD: 18 outs + 7K*3 + 2ER*(-3) + QS*5 = 38.0"""
         row = _make_row(reasoning="Underdog value", stat="Pitcher Fantasy Score",
                         player="gerrit cole", line=35.0)
-        val, src, conf = stat_value_for_prop(_PITCHER_STATS, "gerrit cole", "Pitcher Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_PITCHER_STATS, "gerrit cole", "Pitcher Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_PITCHER_UD_QS,
                          f"Expected {_EXPECTED_PITCHER_UD_QS} (UD QS), got {val}")
 
@@ -191,7 +191,7 @@ class TestPitcherFantasyScoreBasic(unittest.TestCase):
         """PP: QS(4) + Win(6) = 18+21-6+4+6 = 43.0"""
         row = _make_row(reasoning="PrizePicks baseline", stat="Pitcher Fantasy Score",
                         player="gerrit cole", line=40.0)
-        val, src, conf = stat_value_for_prop(_PITCHER_STATS_WITH_WIN, "gerrit cole", "Pitcher Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_PITCHER_STATS_WITH_WIN, "gerrit cole", "Pitcher Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_PITCHER_PP_WIN_QS,
                          f"Expected {_EXPECTED_PITCHER_PP_WIN_QS}, got {val}")
 
@@ -199,7 +199,7 @@ class TestPitcherFantasyScoreBasic(unittest.TestCase):
         """UD: QS(5) + Win(5) = 18+21-6+5+5 = 43.0"""
         row = _make_row(reasoning="Underdog value", stat="Pitcher Fantasy Score",
                         player="gerrit cole", line=40.0)
-        val, src, conf = stat_value_for_prop(_PITCHER_STATS_WITH_WIN, "gerrit cole", "Pitcher Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_PITCHER_STATS_WITH_WIN, "gerrit cole", "Pitcher Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_PITCHER_UD_WIN_QS,
                          f"Expected {_EXPECTED_PITCHER_UD_WIN_QS}, got {val}")
 
@@ -207,7 +207,7 @@ class TestPitcherFantasyScoreBasic(unittest.TestCase):
         """4.1 IP, no QS: PP = UD = 13 + 15 - 3 = 25.0 (no divergent components)"""
         row = _make_row(reasoning="PrizePicks baseline", stat="Pitcher Fantasy Score",
                         player="gerrit cole", line=20.0)
-        val, src, conf = stat_value_for_prop(_PITCHER_STATS_NO_QS, "gerrit cole", "Pitcher Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_PITCHER_STATS_NO_QS, "gerrit cole", "Pitcher Fantasy Score", source_row=row)
         self.assertEqual(val, 25.0, f"Expected 25.0 (no QS), got {val}")
 
 
@@ -242,35 +242,35 @@ class TestPlatformRecovery(unittest.TestCase):
         row = _make_row(reasoning="PrizePicks baseline")
         # With SB: PP=31, UD=30; line 29.5 -> PP=WIN, UD=WIN (agree)
         row["Line"] = 29.5
-        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_HITTER_PP_SB, "Should use PP weights (SB*5)")
 
     def test_underdog_from_reasoning(self) -> None:
         """'Underdog value' in Reasoning -> underdog weights"""
         row = _make_row(reasoning="Underdog value")
         row["Line"] = 29.5
-        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_HITTER_UD_SB, "Should use UD weights (SB*4)")
 
     def test_prizepicks_from_platform_field(self) -> None:
         """Platform field 'PrizePicks' -> prizepicks weights"""
         row = _make_row(reasoning="", platform="PrizePicks")
         row["Line"] = 29.5
-        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_HITTER_PP_SB)
 
     def test_underdog_from_platform_field(self) -> None:
         """Platform field 'Underdog' -> underdog weights"""
         row = _make_row(reasoning="", platform="Underdog")
         row["Line"] = 29.5
-        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_HITTER_UD_SB)
 
     def test_empty_reasoning_platform_is_unknown(self) -> None:
         """Empty Reasoning and Platform -> unknown"""
         # No SB: both PP=26 and UD=26 (agree) -> should grade
         row = _make_row(reasoning="", platform="", line=24.5)
-        val, src, conf = stat_value_for_prop(_HITTER_STATS, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertEqual(val, _EXPECTED_HITTER_BASE,
                          "No SB -> PP and UD agree -> should grade normally")
 
@@ -281,7 +281,7 @@ class TestDisagreementAbstain(unittest.TestCase):
     def test_hitter_sb_platform_unknown_grades_disagree(self) -> None:
         """1 SB, platform unknown, line 30.5: PP=31 WIN, UD=30 LOSS -> ABSTAIN"""
         row = _make_row(reasoning="", platform="", line=30.5)
-        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertIsNone(val, "Disagreement (PP=WIN, UD=LOSS) -> should abstain (None)")
         self.assertEqual(src, "manual")
         self.assertEqual(conf, 0.0)
@@ -289,7 +289,7 @@ class TestDisagreementAbstain(unittest.TestCase):
     def test_hitter_sb_platform_unknown_grades_agree(self) -> None:
         """1 SB, platform unknown, line 20.5: both PP=31 WIN, UD=30 WIN -> grade"""
         row = _make_row(reasoning="", platform="", line=20.5)
-        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_HITTER_STATS_WITH_SB, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertIsNotNone(val, "Both grades agree (WIN) -> should grade, not abstain")
         self.assertIn(val, [_EXPECTED_HITTER_PP_SB, _EXPECTED_HITTER_UD_SB],
                       f"Score should be one of the agreed values, got {val}")
@@ -298,7 +298,7 @@ class TestDisagreementAbstain(unittest.TestCase):
         """QS pitcher, platform unknown, line 37.5: PP=37 LOSS, UD=38 WIN -> ABSTAIN"""
         row = _make_row(reasoning="", platform="", stat="Pitcher Fantasy Score",
                         player="gerrit cole", line=37.5)
-        val, src, conf = stat_value_for_prop(_PITCHER_STATS, "gerrit cole", "Pitcher Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_PITCHER_STATS, "gerrit cole", "Pitcher Fantasy Score", source_row=row)
         self.assertIsNone(val, "Disagreement (PP=LOSS, UD=WIN) -> should abstain (None)")
         self.assertEqual(src, "manual")
         self.assertEqual(conf, 0.0)
@@ -307,14 +307,14 @@ class TestDisagreementAbstain(unittest.TestCase):
         """QS pitcher, platform unknown, line 35.0: PP=37 WIN, UD=38 WIN -> grade"""
         row = _make_row(reasoning="", platform="", stat="Pitcher Fantasy Score",
                         player="gerrit cole", line=35.0)
-        val, src, conf = stat_value_for_prop(_PITCHER_STATS, "gerrit cole", "Pitcher Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_PITCHER_STATS, "gerrit cole", "Pitcher Fantasy Score", source_row=row)
         self.assertIsNotNone(val, "Both grades agree (WIN) -> should grade, not abstain")
 
     def test_pitcher_no_qs_platform_unknown_grades_agree(self) -> None:
         """No QS/Win, platform unknown: no divergent components -> grade"""
         row = _make_row(reasoning="", platform="", stat="Pitcher Fantasy Score",
                         player="gerrit cole", line=20.0)
-        val, src, conf = stat_value_for_prop(_PITCHER_STATS_NO_QS, "gerrit cole", "Pitcher Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(_PITCHER_STATS_NO_QS, "gerrit cole", "Pitcher Fantasy Score", source_row=row)
         self.assertIsNotNone(val, "No QS/Win -> no divergent component -> should grade")
         self.assertEqual(val, 25.0)
 
@@ -332,7 +332,7 @@ class TestMissingComponentAbstain(unittest.TestCase):
         }
         stats = {"mike trout": {"batting": empty_bat, "pitching": {}}}
         row = _make_row(reasoning="PrizePicks baseline", line=20.0)
-        val, src, conf = stat_value_for_prop(stats, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(stats, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertIsNone(val, "No hit data -> cannot compute -> ABSTAIN")
         self.assertEqual(src, "manual")
         self.assertEqual(conf, 0.0)
@@ -347,7 +347,7 @@ class TestMissingComponentAbstain(unittest.TestCase):
         stats = {"gerrit cole": {"batting": {}, "pitching": empty_pit}}
         row = _make_row(reasoning="PrizePicks baseline", stat="Pitcher Fantasy Score",
                         player="gerrit cole", line=20.0)
-        val, src, conf = stat_value_for_prop(stats, "gerrit cole", "Pitcher Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(stats, "gerrit cole", "Pitcher Fantasy Score", source_row=row)
         self.assertIsNone(val, "No IP data -> cannot compute outs -> ABSTAIN")
         self.assertEqual(src, "manual")
         self.assertEqual(conf, 0.0)
@@ -356,7 +356,7 @@ class TestMissingComponentAbstain(unittest.TestCase):
         """Completely empty batting dict -> ABSTAIN"""
         stats = {"mike trout": {"batting": {}, "pitching": {}}}
         row = _make_row(reasoning="PrizePicks baseline", line=20.0)
-        val, src, conf = stat_value_for_prop(stats, "mike trout", "Hitter Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(stats, "mike trout", "Hitter Fantasy Score", source_row=row)
         self.assertIsNone(val, "Empty batting -> cannot compute -> ABSTAIN")
         self.assertEqual(src, "manual")
 
@@ -373,7 +373,7 @@ class TestNBAFantasyNotDerivedRegression(unittest.TestCase):
         stats = {"lebron james": self._NBA_ROW}
         row = {"Player Name": "lebron james", "Stat": "Fantasy Score",
                "Line": 40.0, "Reasoning": "", "Platform": ""}
-        val, src, conf = stat_value_for_prop(stats, "lebron james", "Fantasy Score", row=row)
+        val, src, conf = stat_value_for_prop(stats, "lebron james", "Fantasy Score", source_row=row)
         self.assertIsNone(val, "NBA fantasy score must still be NOT-DERIVABLE")
         self.assertEqual(src, "manual")
 
@@ -381,7 +381,7 @@ class TestNBAFantasyNotDerivedRegression(unittest.TestCase):
         stats = {"lebron james": self._NBA_ROW}
         row = {"Player Name": "lebron james", "Stat": "Fantasy Points",
                "Line": 40.0, "Reasoning": "", "Platform": ""}
-        val, src, conf = stat_value_for_prop(stats, "lebron james", "Fantasy Points", row=row)
+        val, src, conf = stat_value_for_prop(stats, "lebron james", "Fantasy Points", source_row=row)
         self.assertIsNone(val, "NBA fantasy points must still be NOT-DERIVABLE")
         self.assertEqual(src, "manual")
 
