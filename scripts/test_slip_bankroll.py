@@ -542,5 +542,132 @@ class TestRebuildSlipBankroll(unittest.TestCase):
             self.assertAlmostEqual(stake_lo, confidence_stake(0.61, 1.50, 100.0), places=4)
 
 
+    def test_rebuild_wipes_stale_in_range_rows(self):
+        """Regression: stale prop-era rows for in-range dates with NO graded slip must be wiped.
+
+        Scenario:
+          - Slip History has graded slips for 2026-06-08 and 2026-06-10 (two slip dates).
+          - Daily Log + Bankroll Chart Data already contain a STALE row for 2026-06-09
+            (a prop-era row — no slip exists for that date) with a clearly pre-rebuild value.
+          - After rebuild_slip_bankroll(dry_run=False), the 2026-06-09 stale row must be
+            absent from both sheets; only 2026-06-08 and 2026-06-10 rows should remain in
+            the rebuilt range; no duplicate dates; first in-range row is 2026-06-08.
+
+        Bug: the original wipe looped over `all_dates` (distinct SLIP dates) only, so
+        in-range dates that had NO slip survived — violating BANKROLL-03 success criterion #3.
+        """
+        from grade_slips import slip_id_for
+
+        date_a = "2026-06-08"  # has a graded slip
+        date_b = "2026-06-10"  # has a graded slip
+        date_stale = "2026-06-09"  # NO slip — stale prop-era row
+
+        def _make_slip_def(prop_id: str, player: str, prob: float) -> dict:
+            return {
+                "category": "test_power",
+                "legs": [{"prop_id": prop_id, "player_name": player,
+                           "stat_type": "points", "line": "20.5",
+                           "side": "OVER", "sport": "NBA"}],
+                "combined_probability": prob,
+                "combined_ev_score": 1.45,
+            }
+
+        slip_def_a = _make_slip_def("stale-wipe-001", "PlayerA", 0.72)
+        slip_def_b = _make_slip_def("stale-wipe-002", "PlayerB", 0.68)
+        sid_a = slip_id_for(date_a, slip_def_a)
+        sid_b = slip_id_for(date_b, slip_def_b)
+
+        slip_rows = [
+            _make_full_slip_row(date_a, sid_a, platform="PrizePicks", slip_type="power",
+                                total_legs=2, winning_legs=2, losing_legs=0, pvd_legs=0,
+                                net_pnl=2.0, needs_recon=False),
+            _make_full_slip_row(date_b, sid_b, platform="PrizePicks", slip_type="power",
+                                total_legs=2, winning_legs=2, losing_legs=0, pvd_legs=0,
+                                net_pnl=3.0, needs_recon=False),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            slips_dir = tmp_path / "slips"
+            slips_dir.mkdir()
+
+            # Write slip JSON for date_a and date_b; NO JSON for date_stale
+            for d, defs in [(date_a, [slip_def_a]), (date_b, [slip_def_b])]:
+                (slips_dir / f"slips_{d}.json").write_text(
+                    json.dumps(_make_slip_json(d, defs))
+                )
+
+            # Build workbook with Slip History AND pre-existing stale rows
+            wb = _make_master_wb_with_slip_history(slip_rows)
+
+            # Inject stale prop-era rows for date_stale into both target sheets
+            stale_bankroll_value = 73.324  # distinctive old value — must not survive rebuild
+            stale_timestamp = "2026-06-10T00:00:00+00:00"  # old timestamp
+            wb["Daily Log"].append([date_stale, "NBA", 1, 0, 0, 1.0, 5.0, stale_bankroll_value, "STALE PROP ERA"])
+            wb["Bankroll Chart Data"].append([date_stale, stale_bankroll_value, -26.7, stale_timestamp])
+
+            master = tmp_path / "master_pnl.xlsx"
+            bankroll_path = tmp_path / "bankroll.json"
+            wb.save(str(master))
+
+            result = runner.rebuild_slip_bankroll(
+                dry_run=False,
+                inception=date_a,  # 2026-06-08
+                _wb_override=wb,
+                _master_override=master,
+                _bankroll_override=bankroll_path,
+                _slips_dir_override=str(slips_dir),
+            )
+
+            self.assertEqual(result["status"], "ok")
+
+            # --- Assert Bankroll Chart Data ---
+            bcd = wb["Bankroll Chart Data"]
+            bcd_dates = [str(bcd.cell(r, 1).value or "")[:10]
+                         for r in range(2, bcd.max_row + 1)
+                         if bcd.cell(r, 1).value is not None]
+
+            # Stale date must be gone
+            self.assertNotIn(
+                date_stale, bcd_dates,
+                f"Stale Bankroll Chart Data row for {date_stale} must be wiped by rebuild"
+            )
+            # date_a must be the first in-range row
+            in_range = [d for d in bcd_dates if d >= date_a]
+            self.assertTrue(in_range, "Bankroll Chart Data must have at least one rebuilt row")
+            self.assertEqual(
+                in_range[0], date_a,
+                f"First in-range Bankroll Chart Data row must be {date_a}, got {in_range[0]}"
+            )
+            # No duplicate dates in the rebuilt range
+            self.assertEqual(
+                len(in_range), len(set(in_range)),
+                f"Bankroll Chart Data has duplicate dates in rebuilt range: {in_range}"
+            )
+            # Only expected slip dates present in-range
+            self.assertEqual(
+                sorted(set(in_range)), sorted({date_a, date_b}),
+                f"Bankroll Chart Data in-range dates must be exactly {sorted({date_a, date_b})}, got {sorted(set(in_range))}"
+            )
+
+            # --- Assert Daily Log ---
+            dl = wb["Daily Log"]
+            dl_dates = [str(dl.cell(r, 1).value or "")[:10]
+                        for r in range(2, dl.max_row + 1)
+                        if dl.cell(r, 1).value is not None]
+
+            self.assertNotIn(
+                date_stale, dl_dates,
+                f"Stale Daily Log row for {date_stale} must be wiped by rebuild"
+            )
+            # Stale value must not appear anywhere in Bankroll Chart Data
+            bcd_bankroll_vals = [bcd.cell(r, 2).value
+                                  for r in range(2, bcd.max_row + 1)]
+            self.assertNotIn(
+                stale_bankroll_value, bcd_bankroll_vals,
+                f"Stale bankroll value {stale_bankroll_value} must not survive in Bankroll Chart Data"
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

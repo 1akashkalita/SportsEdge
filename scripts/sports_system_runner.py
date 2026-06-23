@@ -5422,13 +5422,23 @@ def rebuild_slip_bankroll(
                         "slip_type": slip.get("slip_type") or "",
                     }
 
-    # Step 3: Wipe Daily Log + Bankroll Chart Data for all target dates first.
-    # Then rebuild in ascending date order. Single save_workbook_atomic at the end (Pitfall 3).
+    # Step 3: Wipe Daily Log + Bankroll Chart Data for the full inception-onward range.
+    # We collect dates from the SHEET itself (not just `all_dates`) so that prop-era rows
+    # for in-range dates with NO graded slip are also removed.  Only rows with date <
+    # inception are preserved.  Single save_workbook_atomic at the end (Pitfall 3).
     if not dry_run:
         for sheet_name in ["Daily Log", "Bankroll Chart Data"]:
-            if sheet_name in wb.sheetnames:
-                for d in all_dates:
-                    remove_rows_for_date(wb[sheet_name], d)
+            if sheet_name not in wb.sheetnames:
+                continue
+            ws = wb[sheet_name]
+            # Gather all distinct dates present in the sheet that fall within the rebuild range.
+            sheet_in_range_dates: set[str] = set()
+            for _r in range(2, ws.max_row + 1):
+                _raw = str(ws.cell(_r, 1).value or "")[:10]
+                if _raw and _raw >= inception:
+                    sheet_in_range_dates.add(_raw)
+            for _d in sheet_in_range_dates:
+                remove_rows_for_date(ws, _d)
 
     # Step 4: Chronological rebuild loop
     current_bankroll = 100.0
