@@ -93,7 +93,11 @@ Design: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md` (appro
   3. The operator can mark a slip as placed, persisted via an additive column with an atomic `workbook_io` save (ACTION-02).
   4. The operator can add a note to a slip or pick, persisted additively with an atomic save (ACTION-03).
   5. No dashboard action changes gate logic, grades, EV, or exposure caps — all writes are additive-only, the betting pipeline is untouched, and this is proven by tests (ACTION-04).
-**Plans**: TBD
+**Plans**: 4 plans (test-first: RED scaffold → write layer → routes → UI + human-verify)
+  - [ ] 03-01-PLAN.md — Wave-0 RED test scaffold (test_dashboard_actions.py, 9 ACTION-01..04 cases) + dashboard_writes.py stub + app.secret_key (ACTION-01..04)
+  - [ ] 03-02-PLAN.md — Additive write layer: mark_placed + add_note (Slip History on master_pnl.xlsx, atomic) + read-only last_run_record; turns ACTION-02/03/04-write tests green (ACTION-02, ACTION-03, ACTION-04)
+  - [ ] 03-03-PLAN.md — Flask routes: lock-aware async /action/refresh + /api/status + /action/mark-placed + /action/add-note; turns ACTION-01 tests green (ACTION-01, ACTION-02, ACTION-03)
+  - [ ] 03-04-PLAN.md — UI: flash banner (base.html) + slip action forms/state + refresh widget + status poll (slips.html) + human-verify checkpoint (ACTION-01, ACTION-02, ACTION-03)
 **UI hint**: yes
 
 ## Progress
@@ -105,7 +109,7 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|-----------|----------------|--------|-----------|
 | 1. Foundation & Data Layer | v3.0 | 3/3 | Complete   | 2026-06-24 |
 | 2. Read Views | v3.0 | 3/3 | Complete   | 2026-06-24 |
-| 3. Safe Actions | v3.0 | 0/TBD | Not started | - |
+| 3. Safe Actions | v3.0 | 0/4 | Planned | - |
 
 ## Next Milestone
 
