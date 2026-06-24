@@ -293,6 +293,26 @@ CLV_HEADERS = [
 ]
 PARLAY_HEADERS = ["Date", "Sport", "Parlay Name", "Legs", "Units", "Status", "Reasoning", "Correlation Group", "Slip ID"]
 SKIPPED_PICK_HEADERS = ["Date", "Sport", "Pick", "Gate Failed", "Reason", "What Edge Would Have Been", "Result", "Pick Type", "Player/Team", "Line", "Probability", "EV", "Units", "Logged At"] + LINE_TIMING_FIELDS + ["Platform"]
+
+# Reason-prefix constant for the GATE 1 "projection unavailable" skip class.
+# ~88% of MLB candidates produce this skip (stat-coverage gap, not a join bug).
+# These rows carry zero analytical value and bloat the Skipped Picks sheet.
+# Defined ONCE here; the cleanup script imports it — no duplicated literal.
+PROJECTION_UNAVAILABLE_REASON_PREFIX: str = "projection unavailable"
+
+
+def is_projection_unavailable_skip(skip: dict) -> bool:
+    """Return True iff the skip dict represents a GATE-1 'projection unavailable' skip.
+
+    Matches on the reason-string prefix (not gate name), so other GATE-1 skips
+    (e.g. 'prop model edge ... < 0.5') still pass through unaffected.
+    GATE-8 cap rows have reasons that never start with this prefix, so the
+    build_slips vetted universe is always preserved.
+
+    Defensive: a missing or None reason always returns False (not suppressed).
+    """
+    reason = str(skip.get("reason") or "")
+    return reason.startswith(PROJECTION_UNAVAILABLE_REASON_PREFIX)
 LIVE_WATCHLIST_HEADERS = ["Date", "Sport", "Platform", "Emoji", "Line Type", "Player", "Stat", "Line", "Projection", "Probability", "Required Use Multiplier", "Reason", "Notes"] + LINE_TIMING_FIELDS
 INJURY_HEADERS = ["Date", "Sport", "Player Name", "Team", "Baseline Status", "Current Status", "Source", "Checked At", "Impact"]
 RESULT_HEADERS = [
@@ -3331,6 +3351,11 @@ def daily_picks(sport: str) -> dict[str, Any]:
     )
 
     for skipped in generated.get("skipped", []):
+        # Suppress the GATE-1 "projection unavailable" skip class: these rows make up
+        # ~88% of MLB skips (stat-coverage gap, not a join bug) and carry no analytical
+        # value. Gate-8 cap rows are always preserved (predicate does not match them).
+        if is_projection_unavailable_skip(skipped):
+            continue
         skipped_ws.append([
             date, sport.upper(), skipped.get("pick"), skipped.get("gate_failed"), skipped.get("reason"),
             skipped.get("what_edge_would_have_been"), skipped.get("result", ""), skipped.get("pick_type"),
