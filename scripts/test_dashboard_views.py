@@ -208,11 +208,30 @@ class TestTodayBoard(unittest.TestCase):
 
     def test_locked_state(self) -> None:
         """When read_sheet_rows returns None (locked workbook), get_today_board()
-        returns locked=True and does not raise."""
+        returns locked=True and does not raise.
+
+        Creates a real workbook file first so the accessor sees a present-but-locked
+        file (file-existence check passes) then patches read_sheet_rows to return None
+        to simulate a mid-write lock (WorkbookAccessError path, D-01).
+        """
         today = dashboard_data.today_str()
 
-        with patch.object(dashboard_data, "read_sheet_rows", return_value=None):
-            result = dashboard_data.get_today_board(date=today)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create empty (but real) workbook file to pass the existence check
+            nba_path = Path(tmpdir) / f"nba_{today}.xlsx"
+            Workbook().save(nba_path)
+
+            orig_nba = dashboard_data.NBA_DIR
+            orig_mlb = dashboard_data.MLB_DIR
+            try:
+                dashboard_data.NBA_DIR = Path(tmpdir)
+                dashboard_data.MLB_DIR = Path(tmpdir)
+                # Patch read_sheet_rows to return None, simulating mid-write lock
+                with patch.object(dashboard_data, "read_sheet_rows", return_value=None):
+                    result = dashboard_data.get_today_board(date=today)
+            finally:
+                dashboard_data.NBA_DIR = orig_nba
+                dashboard_data.MLB_DIR = orig_mlb
 
         self.assertTrue(result["locked"], "Expected locked=True when read_sheet_rows returns None")
         self.assertEqual(result["approved"], [], "Expected empty approved list when locked")
