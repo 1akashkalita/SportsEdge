@@ -61,7 +61,10 @@ Design: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md` (appro
   3. The server is bound to `127.0.0.1` only and is unreachable from another machine on the network (DASH-03).
   4. The data layer reads existing workbooks (`read_only=True`) and JSON artifacts (`bankroll.json`, latest props JSON) and returns data without writing to them; the source files' contents and mtimes are unchanged after a read (DASH-04).
   5. When a workbook is locked / being atomically swapped mid-write, a read retries or skips gracefully and never raises an unhandled error or returns corrupt data (DASH-04).
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 01-01-PLAN.md — Wave-0 test scaffolds + verify-first Flask-serves gate (DASH-02)
+  - [ ] 01-02-PLAN.md — Read-only, lock-tolerant data layer + badge/freshness signals (DASH-04, D-01/D-02)
+  - [ ] 01-03-PLAN.md — Flask app shell + dark Pico templates + loopback-only launch (DASH-01, DASH-03)
 **UI hint**: yes
 
 ### Phase 2: Read Views
@@ -97,7 +100,7 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Foundation & Data Layer | v3.0 | 0/TBD | Not started | - |
+| 1. Foundation & Data Layer | v3.0 | 0/3 | Planned | - |
 | 2. Read Views | v3.0 | 0/TBD | Not started | - |
 | 3. Safe Actions | v3.0 | 0/TBD | Not started | - |
 

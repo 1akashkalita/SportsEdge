@@ -2,7 +2,7 @@
 phase: 1
 slug: foundation-data-layer
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-06-24
 ---
@@ -41,14 +41,14 @@ created: 2026-06-24
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | 01 | 0 | DASH-02 | T-1-01 | Flask imports + binds + self-GET 200 on 3.14.0a2 | smoke | `cd scripts && python3 test_dashboard.py -k flask_serves` | ❌ W0 | ⬜ pending |
-| TBD | 01 | 1 | DASH-01 | — | `dashboard.py` launch entry; route `/` returns 200 | unit | `cd scripts && python3 test_dashboard.py -k route_index` | ❌ W0 | ⬜ pending |
-| TBD | 01 | 1 | DASH-03 | T-1-01 | socket binds `127.0.0.1` only (getsockname/lsof loopback) | integration | `cd scripts && python3 test_dashboard.py -k loopback_only` | ❌ W0 | ⬜ pending |
-| TBD | 01 | 1 | DASH-04 | — | `read_only` read leaves source mtime + sha256 unchanged | unit | `cd scripts && python3 test_dashboard_data.py -k read_only_untouched` | ❌ W0 | ⬜ pending |
-| TBD | 01 | 1 | DASH-04 | — | locked / `WorkbookAccessError` → last-known-good, no raise | unit | `cd scripts && python3 test_dashboard_data.py -k lock_tolerant` | ❌ W0 | ⬜ pending |
-| TBD | 01 | 1 | DASH-04 | — | missing workbook/JSON → empty state, no exception | unit | `cd scripts && python3 test_dashboard_data.py -k missing_is_empty` | ❌ W0 | ⬜ pending |
-| TBD | 01 | 1 | D-02 | — | "today" matches runner's `today_str()` (naive local) | unit | `cd scripts && python3 test_dashboard_data.py -k today_matches_runner` | ❌ W0 | ⬜ pending |
-| TBD | 01 | 1 | D-01 | — | badge: live lock pid → in-progress; dead/stale pid → not | unit | `cd scripts && python3 test_dashboard_data.py -k write_in_progress` | ❌ W0 | ⬜ pending |
+| 01-01.T1 | 01 | 0 | DASH-02 | T-1-01 | Flask imports + binds + self-GET 200 on 3.14.0a2 | smoke | `cd scripts && python3 test_dashboard.py -k flask_serves` | ❌ W0 | ⬜ pending |
+| 01-03.T2 | 03 | 2 | DASH-01 | — | `dashboard.py` launch entry; route `/` returns 200 | unit | `cd scripts && python3 test_dashboard.py -k route_index` | ❌ W0 | ⬜ pending |
+| 01-03.T2 | 03 | 2 | DASH-03 | T-1-01 | socket binds `127.0.0.1` only (getsockname/lsof loopback) | integration | `cd scripts && python3 test_dashboard.py -k loopback_only` | ❌ W0 | ⬜ pending |
+| 01-02.T1 | 02 | 1 | DASH-04 | — | `read_only` read leaves source mtime + sha256 unchanged | unit | `cd scripts && python3 test_dashboard_data.py -k read_only_untouched` | ❌ W0 | ⬜ pending |
+| 01-02.T1 | 02 | 1 | DASH-04 | — | locked / `WorkbookAccessError` → last-known-good, no raise | unit | `cd scripts && python3 test_dashboard_data.py -k lock_tolerant` | ❌ W0 | ⬜ pending |
+| 01-02.T1 | 02 | 1 | DASH-04 | — | missing workbook/JSON → empty state, no exception | unit | `cd scripts && python3 test_dashboard_data.py -k missing_is_empty` | ❌ W0 | ⬜ pending |
+| 01-02.T1 | 02 | 1 | D-02 | — | "today" matches runner's `today_str()` (naive local) | unit | `cd scripts && python3 test_dashboard_data.py -k today_matches_runner` | ❌ W0 | ⬜ pending |
+| 01-02.T2 | 02 | 1 | D-01 | — | badge: live lock pid → in-progress; dead/stale pid → not | unit | `cd scripts && python3 test_dashboard_data.py -k write_in_progress` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
