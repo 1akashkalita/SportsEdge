@@ -9,9 +9,9 @@ Requirements for this milestone (v3.0). Each maps to exactly one roadmap phase.
 
 ### Dashboard Foundation & Data Layer
 
-- [ ] **DASH-01**: Operator can launch the dashboard with one command (`python3 dashboard.py`) and open it at a localhost URL
+- [x] **DASH-01**: Operator can launch the dashboard with one command (`python3 dashboard.py`) and open it at a localhost URL
 - [x] **DASH-02**: The dashboard runs on the system Python 3.14 interpreter — Flask verified at setup, with a stdlib `http.server` fallback if Flask will not import on 3.14.0a2
-- [ ] **DASH-03**: The dashboard binds to `127.0.0.1` only and is not reachable from other machines
+- [x] **DASH-03**: The dashboard binds to `127.0.0.1` only and is not reachable from other machines
 - [x] **DASH-04**: The dashboard reads existing persisted data (workbooks + JSON) without modifying or corrupting it, tolerating a workbook that is locked mid-write
 
 ### Read Views
@@ -55,9 +55,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DASH-01 | Phase 1 — Foundation & Data Layer | Pending |
+| DASH-01 | Phase 1 — Foundation & Data Layer | Complete |
 | DASH-02 | Phase 1 — Foundation & Data Layer | Complete |
-| DASH-03 | Phase 1 — Foundation & Data Layer | Pending |
+| DASH-03 | Phase 1 — Foundation & Data Layer | Complete |
 | DASH-04 | Phase 1 — Foundation & Data Layer | Complete |
 | VIEW-01 | Phase 2 — Read Views | Pending |
 | VIEW-02 | Phase 2 — Read Views | Pending |

@@ -45,7 +45,7 @@ Deferred (acknowledged tech-debt): Nyquist VALIDATION across phases + 3 live hum
 
 Design: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md` (approved).
 
-- [ ] **Phase 1: Foundation & Data Layer** — One-command localhost launch (Flask verified on 3.14.0a2, stdlib fallback), 127.0.0.1-only, read-only data layer that tolerates a mid-write workbook lock
+- [x] **Phase 1: Foundation & Data Layer** — One-command localhost launch (Flask verified on 3.14.0a2, stdlib fallback), 127.0.0.1-only, read-only data layer that tolerates a mid-write workbook lock (completed 2026-06-24)
 - [ ] **Phase 2: Read Views** — Today (props/picks +EV/prob/edge/confidence), Slips (status/payout/legs + why-paired), History (W/L overall+per-sport, bankroll/ROI chart, per-tier breakdown)
 - [ ] **Phase 3: Safe Actions** — Lock-aware async refresh/re-run, mark-slip-placed, add-note — all additive-only and atomic, betting pipeline untouched
 
@@ -64,7 +64,7 @@ Design: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md` (appro
 **Plans**: 3 plans
   - [x] 01-01-PLAN.md — Wave-0 test scaffolds + verify-first Flask-serves gate (DASH-02)
   - [x] 01-02-PLAN.md — Read-only, lock-tolerant data layer + badge/freshness signals (DASH-04, D-01/D-02)
-  - [ ] 01-03-PLAN.md — Flask app shell + dark Pico templates + loopback-only launch (DASH-01, DASH-03)
+  - [x] 01-03-PLAN.md — Flask app shell + dark Pico templates + loopback-only launch (DASH-01, DASH-03)
 **UI hint**: yes
 
 ### Phase 2: Read Views
@@ -100,7 +100,7 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Foundation & Data Layer | v3.0 | 2/3 | In Progress|  |
+| 1. Foundation & Data Layer | v3.0 | 3/3 | Complete   | 2026-06-24 |
 | 2. Read Views | v3.0 | 0/TBD | Not started | - |
 | 3. Safe Actions | v3.0 | 0/TBD | Not started | - |
 
