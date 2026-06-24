@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""test_dashboard_views.py — VIEW-01/02/03 tests for Phase 2 view accessors.
+"""test_dashboard_views.py — VIEW-01/02/03 tests for Phase 2 view accessors and routes.
 
 Covers:
 - TestTodayBoard: unit tests for get_today_board() using synthetic in-memory workbooks
 - TestSlipsAccessor: unit tests for get_all_slips() using in-memory master_pnl-shaped workbook
 - TestHistoryAccessor: unit tests for get_history_data() using in-memory workbook
-
-These tests are RED until Task 2 lands the accessors in dashboard_data.py.
-TestRoutes (route smoke tests) belong in Plan 02/03 where the routes are added.
+- TestRoutes: route smoke tests for /, /slips, /history via Flask test_client()
 """
 from __future__ import annotations
 
@@ -25,6 +23,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import dashboard_data  # noqa: E402
+import dashboard  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +563,43 @@ class TestHistoryAccessor(unittest.TestCase):
             bankroll[w24_idx], 103.0,
             f"W24 bankroll must be 103.0 (last point wins), got {bankroll[w24_idx]}",
         )
+
+
+# ---------------------------------------------------------------------------
+# TestRoutes — route smoke tests for /, /slips, /history (Plan 02)
+# ---------------------------------------------------------------------------
+
+class TestRoutes(unittest.TestCase):
+    """Smoke tests for the three dashboard GET routes added in Plan 02.
+
+    Uses Flask's test_client() — no network socket needed.
+    test_history_200 checks for 'chart.js' in the response body; this will be
+    RED until Plan 03 ships history.html (an acceptable Wave-2 state per the plan).
+    """
+
+    def setUp(self) -> None:
+        self.client = dashboard.app.test_client()
+
+    def test_index_200(self) -> None:
+        """GET / returns 200 and the response body contains 'EV' (the EV column header)."""
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"EV", resp.data)
+
+    def test_slips_200(self) -> None:
+        """GET /slips returns 200."""
+        resp = self.client.get("/slips")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_history_200(self) -> None:
+        """GET /history returns 200 and the lowercased body contains 'chart.js'.
+
+        This will be RED until Plan 03 ships history.html (the route is defined here
+        but the template ships later — acceptable Wave-2 state until Plan 03 merges).
+        """
+        resp = self.client.get("/history")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"chart.js", resp.data.lower())
 
 
 if __name__ == "__main__":
