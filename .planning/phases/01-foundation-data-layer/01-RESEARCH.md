@@ -285,10 +285,10 @@ def write_in_progress() -> bool:
         try:
             os.kill(pid, 0)  # liveness probe — no signal sent
             return True      # live process holds a fresh lock → show "updating…"
-        except (ProcessLookupError, PermissionError):
-            # ProcessLookupError = dead pid (ignore); PermissionError = alive (count it)
-            if isinstance_check_alive := True:  # PermissionError path means alive
-                pass
+        except ProcessLookupError:
+            continue         # dead pid → not in progress; keep checking other locks
+        except PermissionError:
+            return True      # pid alive but owned by another user → a write IS happening
     return False
 
 def last_updated_hhmm() -> str | None:
