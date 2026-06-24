@@ -1,0 +1,75 @@
+{
+  "PrizePicks": {
+    "power": {
+      "2": {"2": 3.0},
+      "3": {"3": 6.0},
+      "4": {"4": 10.0},
+      "5": {"5": 20.0},
+      "6": {"6": 37.5}
+    },
+    "flex": {
+      "3": {
+        "3": 3.0,
+        "2": 1.0,
+        "1": 0.0,
+        "0": 0.0
+      },
+      "4": {
+        "4": 6.0,
+        "3": 1.5,
+        "2": 0.0,
+        "1": 0.0,
+        "0": 0.0
+      },
+      "5": {
+        "5": 10.0,
+        "4": 2.0,
+        "3": 0.0,
+        "2": 0.0,
+        "1": 0.0,
+        "0": 0.0
+      },
+      "6": {
+        "6": 25.0,
+        "5": 2.0,
+        "4": 0.0,
+        "3": 0.0,
+        "2": 0.0,
+        "1": 0.0,
+        "0": 0.0
+      }
+    },
+    "special_line_policy": {
+      "standard": {
+        "emoji": "⚪",
+        "mode": "exact"
+      },
+      "demon": {
+        "emoji": "😈",
+        "mode": "conditional_threshold",
+        "safety_margin": 0.15,
+        "good_threshold_max": 2.25,
+        "risky_threshold_max": 3.0,
+        "note": "Demon lines pay more than standard, but exact multiplier is unavailable. Calculate required use multiplier and show ONLY USE IF threshold."
+      },
+      "goblin": {
+        "emoji": "🟢",
+        "mode": "conditional_threshold",
+        "safety_margin": 0.10,
+        "good_threshold_max": 1.35,
+        "risky_threshold_max": 1.60,
+        "note": "Goblin lines pay less than standard, but exact multiplier is unavailable. Calculate required use multiplier and show ONLY USE IF threshold."
+      }
+    }
+  },
+  "Dabble": {},
+  "Underdog": {
+    "_comment": "power = NON-INSURED (all-or-nothing). Multipliers derived 2026-06-24 from the operator's stated actual per-leg break-evens (2=53.5%, 3=53.7%, 4=56.1%, 5=55.0%) as mult = 1/breakeven^n. NOTE: these win-multipliers are break-even-derived; if the real Underdog payouts are the round 3/6/10/20x, switch them (affects winning-slip PnL only; losses are -stake regardless). INSURED (flex / partial-payout) table is intentionally OMITTED: a single break-even does not determine the full + (n-1) partial multipliers, so Underdog flex slips remain MANUAL REVIEW until the operator supplies actual insured payouts.",
+    "power": {
+      "2": {"2": 3.494},
+      "3": {"3": 6.458},
+      "4": {"4": 10.096},
+      "5": {"5": 19.87}
+    }
+  }
+}
