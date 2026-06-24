@@ -45,23 +45,59 @@ def _port() -> int:
 
 
 # ---------------------------------------------------------------------------
+# Freshness context helper — DRY wrapper required by all base.html nav badges
+# ---------------------------------------------------------------------------
+
+def _freshness_context() -> dict[str, object]:
+    """Return freshness context vars required by base.html nav (D-01/D-02).
+
+    Called by every route handler. Passing these to render_template is mandatory
+    for all templates that extend base.html — omitting them causes an
+    UndefinedError on the {% if write_in_progress %} check (Pitfall 9).
+    """
+    return {
+        "write_in_progress": dashboard_data.write_in_progress(),
+        "last_updated": dashboard_data.last_updated_hhmm(),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 @app.route("/")
 def index() -> str:
-    """Render the Phase-1 shell with live freshness signals (D-01/D-02/D-03).
+    """Render the Today master table — approved picks + dimmed skipped rows (VIEW-01).
 
-    Freshness context is computed fresh on every request (D-03 — no long-lived
-    cache). Values come from the Phase-1 read layer (dashboard_data):
-        write_in_progress — drives the "updating…" badge (D-01)
-        last_updated      — HH:MM label from the last pipeline run (D-02)
+    Calls get_today_board() from the read layer and passes the board dict to
+    index.html together with freshness context for the nav badge (D-01/D-02).
     """
-    return render_template(
-        "index.html",
-        write_in_progress=dashboard_data.write_in_progress(),
-        last_updated=dashboard_data.last_updated_hhmm(),
-    )
+    board = dashboard_data.get_today_board()
+    return render_template("index.html", board=board, **_freshness_context())
+
+
+@app.route("/slips")
+def slips() -> str:
+    """Render the Slips page — all slips grouped by date descending (VIEW-02).
+
+    Calls get_all_slips() from the read layer and passes the data dict to
+    slips.html together with freshness context for the nav badge (D-01/D-02).
+    """
+    data = dashboard_data.get_all_slips()
+    return render_template("slips.html", data=data, **_freshness_context())
+
+
+@app.route("/history")
+def history() -> str:
+    """Render the History page — W/L breakdown + bankroll chart (VIEW-03).
+
+    Calls get_history_data() from the read layer and passes the data dict to
+    history.html together with freshness context for the nav badge (D-01/D-02).
+    The history.html template ships in Plan 03; the route is defined here so
+    dashboard.py has a single owner for all routes.
+    """
+    data = dashboard_data.get_history_data()
+    return render_template("history.html", data=data, **_freshness_context())
 
 
 # ---------------------------------------------------------------------------

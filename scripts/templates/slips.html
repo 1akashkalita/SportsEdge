@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Slips — Hermes Sports Dashboard{% endblock %}
+
+{% block content %}
+<h2>Slips</h2>
+
+{% if data.locked %}
+<p style="color:#e67e22;">Data is updating&hellip; Showing last-known-good data.</p>
+{% endif %}
+
+{% if data.slips %}
+{# Date filter — server-rendered unique dates from accessor output #}
+{% set unique_dates = data.slips | map(attribute='Date') | unique | list %}
+<div style="display:flex; gap:0.5rem; margin-bottom:0.75rem; align-items:center;">
+  <label for="filter-date" style="font-size:0.85rem;">Date:</label>
+  <select id="filter-date" onchange="filterSlips()" style="font-size:0.85rem;">
+    <option value="">All Dates</option>
+    {% for d in unique_dates %}
+      <option value="{{ d }}">{{ d }}</option>
+    {% endfor %}
+  </select>
+</div>
+
+{# Group slips by date using a Jinja namespace loop — data is already Date-descending #}
+{% set ns = namespace(current_date=None) %}
+{% for slip in data.slips %}
+  {% if slip.Date != ns.current_date %}
+    {% set ns.current_date = slip.Date %}
+    <h3 class="slip-date-heading" data-date="{{ slip.Date }}">{{ slip.Date }}</h3>
+  {% endif %}
+  <table class="slip-table" data-slip-date="{{ slip.Date }}" style="margin-bottom:0.25rem; width:100%;">
+    <tbody>
+      {# Summary row — compact, click to expand #}
+      <tr class="slip-summary" onclick="toggleSlip(this)" style="cursor:pointer;">
+        <td style="width:6rem;">{{ slip.Date }}</td>
+        <td style="width:7rem;">{{ slip['Slip Result'] if slip['Slip Result'] else '—' }}</td>
+        <td style="width:7rem;">{{ slip['Slip Type'] if slip['Slip Type'] else '—' }}</td>
+        <td style="width:4rem;">{{ slip['Number of Legs'] if slip['Number of Legs'] is not none else '—' }} legs</td>
+        <td style="width:5rem;">{{ slip['Standard Payout Multiplier'] if slip['Standard Payout Multiplier'] else 'n/a' }}x</td>
+        <td style="width:2rem;">&#9654;</td>
+      </tr>
+      {# Detail row — hidden by default, revealed on click #}
+      <tr class="slip-detail" style="display:none;">
+        <td colspan="6" style="padding:0.5rem 1rem; background:#1a1a1a;">
+          <div>
+            {% if slip.legs_list %}
+            <strong>Legs:</strong>
+            <ul style="margin:0.25rem 0 0.5rem 1.25rem; padding:0;">
+              {% for leg in slip.legs_list %}
+                <li>{{ leg }}</li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p style="color:#888;">No legs recorded.</p>
+            {% endif %}
+            <p style="margin:0.25rem 0;"><strong>Why paired:</strong> {{ slip.why_paired }}</p>
+            {% if slip['Net PnL'] is not none %}
+              <p style="margin:0.25rem 0;"><strong>Net PnL:</strong>
+                {% set pnl = slip['Net PnL'] %}
+                <span style="color:{% if pnl is not none and pnl > 0 %}#2ecc71{% elif pnl is not none and pnl < 0 %}#e74c3c{% else %}inherit{% endif %};">
+                  {{ pnl }}u
+                </span>
+              </p>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+{% endfor %}
+{% else %}
+<p>No slips recorded yet.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Expand / collapse the detail row when a summary row is clicked.
+window.toggleSlip = function (summaryRow) {
+  var detailRow = summaryRow.parentElement.nextElementSibling;
+  // Fallback: try nextElementSibling on the row itself (tbody structure)
+  if (!detailRow || !detailRow.classList.contains('slip-detail')) {
+    detailRow = summaryRow.nextElementSibling;
+  }
+  if (detailRow && detailRow.classList.contains('slip-detail')) {
+    detailRow.style.display = detailRow.style.display === 'none' ? '' : 'none';
+    // Rotate the triangle marker using textContent (safe — not workbook data)
+    var marker = summaryRow.querySelector('td:last-child');
+    if (marker) {
+      marker.textContent = detailRow.style.display === '' ? '▼' : '►';
+    }
+  }
+};
+
+// Filter slip tables and date headings by selected date.
+window.filterSlips = function () {
+  var filterDate = document.getElementById('filter-date').value;
+  document.querySelectorAll('.slip-table').forEach(function (tbl) {
+    tbl.style.display = (!filterDate || tbl.dataset.slipDate === filterDate) ? '' : 'none';
+  });
+  document.querySelectorAll('.slip-date-heading').forEach(function (h) {
+    h.style.display = (!filterDate || h.dataset.date === filterDate) ? '' : 'none';
+  });
+};
+</script>
+{% endblock %}

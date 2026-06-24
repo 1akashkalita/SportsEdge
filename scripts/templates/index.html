@@ -3,9 +3,196 @@
 {% block title %}Today — Hermes Sports Dashboard{% endblock %}
 
 {% block content %}
-<h2>Today's Dashboard</h2>
-<p>
-  The three views (Today / Slips / History) land in Phase 2.
-  Phase 1 establishes the dark shell, the read layer, and the freshness signals.
-</p>
+<h2>Today — {{ board.date }}</h2>
+
+{% if board.locked %}
+<p style="color:#e67e22;">Data is updating&hellip; Showing last-known-good data.</p>
+{% endif %}
+
+{# Filter bar — client-side, driven by data-* attributes on table rows #}
+<div style="display:flex; gap:0.5rem; margin-bottom:0.75rem; flex-wrap:wrap; align-items:center;">
+  <label for="filter-platform" style="font-size:0.85rem;">Platform:</label>
+  <select id="filter-platform" onchange="applyFilters()" style="font-size:0.85rem;">
+    <option value="">All Platforms</option>
+  </select>
+
+  <label for="filter-sport" style="font-size:0.85rem;">Sport:</label>
+  <select id="filter-sport" onchange="applyFilters()" style="font-size:0.85rem;">
+    <option value="">All Sports</option>
+  </select>
+
+  <label for="filter-status" style="font-size:0.85rem;">Status:</label>
+  <select id="filter-status" onchange="applyFilters()" style="font-size:0.85rem;">
+    <option value="">All</option>
+    <option value="approved">Approved</option>
+    <option value="skipped">Skipped</option>
+  </select>
+</div>
+
+{% if not board.approved and not board.skipped %}
+<p>No evaluated picks for {{ board.date }} — the pipeline may not have run yet.</p>
+{% else %}
+<table id="today-table">
+  <thead>
+    <tr>
+      <th onclick="sortTable('status')" style="cursor:pointer;" title="Sort by Status">Status</th>
+      <th onclick="sortTable('sport')" style="cursor:pointer;" title="Sort by Sport">Sport</th>
+      <th onclick="sortTable('platform')" style="cursor:pointer;" title="Sort by Platform">Platform</th>
+      <th>Pick</th>
+      <th onclick="sortTable('ev')" style="cursor:pointer;" title="Sort by EV (default: descending)">EV &#9660;</th>
+      <th onclick="sortTable('prob')" style="cursor:pointer;" title="Sort by Model Probability">Model Prob</th>
+      <th onclick="sortTable('edge')" style="cursor:pointer;" title="Sort by Edge">Edge</th>
+      <th onclick="sortTable('confidence')" style="cursor:pointer;" title="Sort by Confidence">Confidence</th>
+    </tr>
+  </thead>
+  <tbody id="today-tbody">
+    {% for row in board.approved %}
+    <tr data-platform="{{ row.Platform }}"
+        data-sport="{{ row.Sport }}"
+        data-status="approved"
+        data-ev="{{ row.ev_float if row.ev_float is not none else '' }}"
+        data-prob="{{ row['Model Over Probability'] if row['Model Over Probability'] else '' }}"
+        data-edge="{{ row.Edge if row.Edge else '' }}"
+        data-confidence="{{ row.Confidence if row.Confidence else '' }}">
+      <td>{{ row.status_label }}</td>
+      <td>{{ row.Sport }}</td>
+      <td>{{ row.Platform }}</td>
+      <td>{{ row.Selection }}</td>
+      <td>{% if row.ev_float is not none %}{{ "%.1f"|format(row.ev_float * 100) }}%{% else %}&mdash;{% endif %}</td>
+      <td>{% if row['Model Over Probability'] %}{{ "%.0f"|format(row['Model Over Probability'] * 100) }}%{% else %}&mdash;{% endif %}</td>
+      <td>{{ row.Edge if row.Edge is not none else '&mdash;' }}</td>
+      <td>{{ row.Confidence if row.Confidence is not none else '&mdash;' }}</td>
+    </tr>
+    {% endfor %}
+    {% for row in board.skipped %}
+    <tr class="skipped-row"
+        data-platform="{{ row.Platform }}"
+        data-sport="{{ row.Sport }}"
+        data-status="skipped"
+        data-ev="{{ row.ev_float if row.ev_float is not none else '' }}"
+        data-prob="{{ row.prob_float if row.prob_float is not none else '' }}"
+        data-edge="{{ row['What Edge Would Have Been'] if row['What Edge Would Have Been'] else '' }}"
+        data-confidence="">
+      <td>{{ row.status_label }}</td>
+      <td>{{ row.Sport }}</td>
+      <td>{{ row.Platform }}</td>
+      <td>{{ row.Pick }}</td>
+      <td>{% if row.ev_float is not none %}{{ "%.1f"|format(row.ev_float * 100) }}%{% else %}&mdash;{% endif %}</td>
+      <td>{% if row.prob_float is not none %}{{ "%.0f"|format(row.prob_float * 100) }}%{% else %}&mdash;{% endif %}</td>
+      <td>{{ row['What Edge Would Have Been'] if row['What Edge Would Have Been'] is not none else '&mdash;' }}</td>
+      <td>&mdash;</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<style>
+  .skipped-row { opacity: 0.55; }
+  #today-table th[onclick]:hover { text-decoration: underline; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // ---- Sort state ----
+  var _sortCol = 'ev';
+  var _sortDir = -1;  // -1 = descending, 1 = ascending
+
+  // ---- Populate filter selects from table data ----
+  function _populateFilters() {
+    var tbody = document.getElementById('today-tbody');
+    if (!tbody) return;
+    var rows = tbody.querySelectorAll('tr');
+    var platforms = new Set();
+    var sports = new Set();
+    rows.forEach(function (r) {
+      if (r.dataset.platform) platforms.add(r.dataset.platform);
+      if (r.dataset.sport) sports.add(r.dataset.sport);
+    });
+    var pSel = document.getElementById('filter-platform');
+    var sSel = document.getElementById('filter-sport');
+    platforms.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value = p; opt.textContent = p;
+      pSel.appendChild(opt);
+    });
+    sports.forEach(function (s) {
+      var opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      sSel.appendChild(opt);
+    });
+  }
+
+  // ---- Filter rows by platform / sport / status ----
+  window.applyFilters = function () {
+    var filterPlatform = document.getElementById('filter-platform').value.toLowerCase();
+    var filterSport    = document.getElementById('filter-sport').value.toLowerCase();
+    var filterStatus   = document.getElementById('filter-status').value.toLowerCase();
+    var tbody = document.getElementById('today-tbody');
+    if (!tbody) return;
+    tbody.querySelectorAll('tr').forEach(function (r) {
+      var pMatch = !filterPlatform || (r.dataset.platform || '').toLowerCase() === filterPlatform;
+      var sMatch = !filterSport    || (r.dataset.sport    || '').toLowerCase() === filterSport;
+      var stMatch = !filterStatus  || (r.dataset.status   || '').toLowerCase() === filterStatus;
+      r.style.display = (pMatch && sMatch && stMatch) ? '' : 'none';
+    });
+  };
+
+  // ---- Sort table by column ----
+  window.sortTable = function (col) {
+    if (_sortCol === col) {
+      _sortDir = -_sortDir;
+    } else {
+      _sortCol = col;
+      _sortDir = (col === 'ev' || col === 'prob' || col === 'edge') ? -1 : 1;
+    }
+    var tbody = document.getElementById('today-tbody');
+    if (!tbody) return;
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function (a, b) {
+      var aVal, bVal;
+      if (col === 'ev') {
+        aVal = parseFloat(a.dataset.ev); bVal = parseFloat(b.dataset.ev);
+      } else if (col === 'prob') {
+        aVal = parseFloat(a.dataset.prob); bVal = parseFloat(b.dataset.prob);
+      } else if (col === 'edge') {
+        aVal = parseFloat(a.dataset.edge); bVal = parseFloat(b.dataset.edge);
+      } else if (col === 'status') {
+        aVal = (a.dataset.status || '').toLowerCase();
+        bVal = (b.dataset.status || '').toLowerCase();
+        return _sortDir * aVal.localeCompare(bVal);
+      } else if (col === 'sport') {
+        aVal = (a.dataset.sport || '').toLowerCase();
+        bVal = (b.dataset.sport || '').toLowerCase();
+        return _sortDir * aVal.localeCompare(bVal);
+      } else if (col === 'platform') {
+        aVal = (a.dataset.platform || '').toLowerCase();
+        bVal = (b.dataset.platform || '').toLowerCase();
+        return _sortDir * aVal.localeCompare(bVal);
+      } else if (col === 'confidence') {
+        aVal = (a.dataset.confidence || '').toLowerCase();
+        bVal = (b.dataset.confidence || '').toLowerCase();
+        return _sortDir * aVal.localeCompare(bVal);
+      } else {
+        return 0;
+      }
+      // Numeric: NaN sinks to bottom
+      var aN = isNaN(aVal), bN = isNaN(bVal);
+      if (aN && bN) return 0;
+      if (aN) return 1;
+      if (bN) return -1;
+      return _sortDir * (aVal - bVal);
+    });
+    rows.forEach(function (r) { tbody.appendChild(r); });
+  };
+
+  // ---- Init on DOM ready ----
+  document.addEventListener('DOMContentLoaded', function () {
+    _populateFilters();
+    sortTable('ev');  // default: EV descending
+  });
+}());
+</script>
 {% endblock %}
