@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Local Dashboard
 status: planning
-last_updated: "2026-06-24T03:21:06.408Z"
+last_updated: "2026-06-24T04:00:00.000Z"
 last_activity: 2026-06-24
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,21 +19,22 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-06-24)
 
-**Core value:** Make the bankroll reflect actual DFS slips, track and grade both slips and props, and feed realized outcomes back into selection — so the operator can tell whether the model is improving.
-**Current focus:** v2.0 shipped — planning next milestone (model / accuracy work). Start with `/gsd-new-milestone`.
+**Core value:** A localhost dashboard that lets the operator *see* the whole system at a glance — today's props/picks (by platform & sport, with +EV and probabilities), all slips with why-they're-paired insight, and W/L history overall + per sport — plus a few safe actions, without touching any betting logic.
+**Current focus:** v3.0 Phase 1 — Foundation & Data Layer. Roadmap created (3 phases, 11/11 requirements mapped). Next: `/gsd-plan-phase 1`.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-06-24 — Milestone v3.0 started
+Phase: 1 of 3 (Foundation & Data Layer)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-06-24 — v3.0 roadmap created (Phases 1–3; DASH→VIEW→ACTION chain)
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
-
-- Total plans completed: 11 (v2.0); 17 (v1.0 historical)
+- Total plans completed: 0 (v3.0); 24 (v2.0), 17 (v1.0) historical
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -41,62 +42,28 @@ Last activity: 2026-06-24 — Milestone v3.0 started
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Trustworthy Results | TBD | - | - |
-| 2. Slip Reconstruction and Grading | TBD | - | - |
-| 3. Slips-Only Bankroll | TBD | - | - |
-| 4. Dual Metrics and Feedback | TBD | - | - |
-| 03 | 4 | - | - |
-| 04 | 4 | - | - |
-| 04.1 | 3 | - | - |
+| 1. Foundation & Data Layer | TBD | - | - |
+| 2. Read Views | TBD | - | - |
+| 3. Safe Actions | TBD | - | - |
 
 **Recent Trend:**
-
 - Last 5 plans: —
 - Trend: —
 
 *Updated after each plan completion*
-| Phase 01-trustworthy-results P1 | 11 | 2 tasks | 4 files |
-| Phase 01-trustworthy-results P01-3 | 10 | 2 tasks | 3 files |
-| Phase 01-trustworthy-results P01-4 | 15 | 2 tasks | 4 files |
-| Phase 01-trustworthy-results P01-5 | 11 | 2 tasks | 7 files |
-| Phase 02-slip-reconstruction-and-grading P1 | 15 | 2 tasks | 2 files |
-| Phase 02-slip-reconstruction-and-grading P2 | 12 | 3 tasks | 2 files |
-| Phase 03-slips-only-bankroll P02 | 8 | 2 tasks | 2 files |
-| Phase 03-slips-only-bankroll P03 | 20 | 2 tasks | 2 files |
-| Phase 03-slips-only-bankroll P04 | ~90 | 3 tasks | 2 files |
-| Phase 04-dual-metrics-and-feedback P01 | 20 | 3 tasks | 2 files |
-| Phase 04-dual-metrics-and-feedback P02 | 320 | 2 tasks | 2 files |
-| Phase 04-dual-metrics-and-feedback P03 | 30 | 3 tasks | 3 files |
-| Phase 04.1 P01 | 8min | 2 tasks | 2 files |
-| Phase 01-trustworthy-results P8 | 217 | 2 tasks | 2 files |
-| Phase 01-trustworthy-results P10 | 25 | 2 tasks | 3 files |
 
 ## Accumulated Context
-
-### Roadmap Evolution
-
-- Phase 04.1 inserted after Phase 4: Close v2.0 audit gaps (BANKROLL-02 forward staking, daily prop-accuracy refresh, calibration dedup + WR-03, RESULTS-07/SLIPS-03 verification debt) (URGENT)
-- Phase 04.1 edited: set real goal + BANKROLL-02 requirement + 5 success criteria; dropped RESULTS-07/SLIPS-03 verification-debt from title (routed to verify-work)
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Roadmap: Strict P1→P2→P3→P4 dependency chain — slips (P2) cannot grade without trustworthy results (P1); bankroll rebase (P3) requires graded slips (P2); feedback loop (P4) requires the rebased bankroll signal (P3)
-- Roadmap: Phase 1 scope fully captured in approved spec `docs/superpowers/specs/2026-06-21-trustworthy-results-design.md` — two layers (in-process name/stat hardening then flagged firecrawl subprocess for residue), provenance columns, money-safe June 8–21 backfill
-- Constraint: Additive-only workbook schema changes; no gate logic or pick verdict changes; tasks must stay under 660s cron budget (cron kill at 720s)
-- Constraint: `ENABLE_FIRECRAWL_RESULT_FALLBACK` default off — Layer-1 alone carries the milestone; Layer-2 is residue-only and flag-gated
-- Hard gate for Phase 1 done: ≥ 80% of non-Fantasy-Score MANUAL REVIEW prop rows resolve on the June 8 dry-run
-- Plan 01-2: group_data.get("type") returns "batting"/"pitching" for MLB groups and None for NBA — the authoritative group identity field (NOT get("name") which is None for both sports in confirmed fixtures)
-- Plan 01-2: MLB batting/pitching namespace split uses sub-dicts; NBA single-group path stays byte-identical flat dict
-- Plan 01-2: Hit-type counts from plays[].type.type stored as batting._hit_counts; atBats top-level key absent (oracle RECLASSIFY #8)
-- Plan 01-2: name_match abstains (returns None) on ambiguous Tier 3/4 matches — strictly no-guess for real-money grading
-- [Phase ?]: Plan 01-5: Layer-2 flag default OFF; enable after smoke test confirms keyless firecrawl-cli@1.19.2
-- [Phase 03, Plan 04]: Slips-only bankroll rebuilt from 2026-06-08 with starting_bankroll=100; live current_bankroll=126.778 (66 slips, 12 dates); 22 MANUAL REVIEW slips excluded (D-13); wipe-scope defect found+fixed (539cbdf) — wipe must cover full inception-onward range, not just slip-dates
-- [Phase 03, Plan 04]: rebuild_bankroll task wired (660s budget, master_pnl.xlsx cooperative lock); one-time operator-authorized live write confirmed idempotent on second run
-- [Phase 01, Plan 08]: Snapshot reconstructed from earliest backup (2026-06-22 012123); 37 rows exact pre-backfill non-Fantasy set, none fabricated; DNP rows marked dnp_void:true excluded from denominator (never Layer-1-recoverable)
-- [Phase ?]: Plan 01-10: Grade-comparison disambiguation done inside stat_value_for_prop using source_row['Line']; source_row optional parameter threads prop metadata without breaking existing callers
+- Roadmap: Strict Phase 1 → 2 → 3 chain (Foundation → Views → Actions). Views render through the Phase-1 read-only data layer (DASH-04); Actions are issued from the rendered views and reuse Phase-1 reads + `workbook_io` atomic save.
+- Design (approved `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md`): Flask/Jinja + openpyxl `read_only` + Chart.js/Pico.css via CDN, no JS build toolchain, bound to `127.0.0.1`, launched `python3 dashboard.py` from `scripts/`.
+- Constraint: Flask-on-3.14.0a2 verification is the FIRST task of Phase 1 — it gates the whole tech choice; stdlib `http.server` fallback if Flask will not import (project memory `python-314a2-abi-gotcha`).
+- Constraint: Additive workbook schema only; the only writes are the three safe actions (atomic, lock-aware); NO action changes gate logic/grades/EV/exposure.
+- Constraint: The dashboard is a manually-launched local process, NOT a cron job — no cron-budget impact. Tests are `unittest`, run from `scripts/`.
 
 ### Pending Todos
 
@@ -104,41 +71,28 @@ None yet.
 
 ### Blockers/Concerns
 
-- ESPN summary availability for older dates (June 8–21) is unverified and may cap how many of the 86 MANUAL REVIEW rows are re-gradable — measure in dry-run, do not assume
-- Keyless firecrawl end-to-end contract (keyless markdown scrape + parser) must be confirmed via the live smoke test before the flag is enabled in cron; until confirmed, flag stays off
-- Fantasy Score formula (46-row residue): PrizePicks/Underdog weighting is unencoded; a subtly-wrong formula would mis-grade real money — scoped only to scraped fallback, not in-process derivation
-- Side recovery for backfill: 86 MANUAL REVIEW rows have null Over/Under; re-parsed from Pick Ref and abstains on ambiguity — measure how many are recoverable in dry-run
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260621-ohh | fix send_slips_telegram urllib→requests SSL failure | 2026-06-22 | 2f245f5 | [260621-ohh-fix-send-slips-telegram-urllib-requests-](./quick/260621-ohh-fix-send-slips-telegram-urllib-requests-/) |
-| 260622-p7x | Slip generation: vetted-only legs (APPROVED + Gate-8 cap-held), single-platform, real Underdog/PrizePicks labels, dedup | 2026-06-22 | 0d6fded | [260622-p7x-slips-vetted-per-platform](./quick/260622-p7x-slips-vetted-per-platform/) |
-| 260623-lzi | Fix O(n²) read in skipped_picks_summary_for_date (single iter_rows pass) — kills recap/alert hang at ~1.5k Skipped Picks rows; + regression test; flagged runaway Skipped-Picks append (Pick Ref="MLB" ×1487) | 2026-06-23 | 1a8384e | [260623-lzi-fix-o-n-2-read-in-skipped-picks-summary-](./quick/260623-lzi-fix-o-n-2-read-in-skipped-picks-summary-/) |
-| 260623-ojf | Stop logging GATE-1 "projection unavailable" skips: write-side filter + shared reason-prefix predicate (no schema/gate/verdict change), preserves GATE-8 vetted rows. Plus idempotent cleanup of existing workbooks — 14,463 rows removed across 33 wb (06-23: 1487→168, 144 GATE-8 rows kept). **Root cause = chronic stat-coverage gap (~88% of MLB candidates are unprojectable markets), NOT a runaway append — corrects 260623-lzi's flag.** | 2026-06-23 | 9c317d0 | [260623-ojf-stop-logging-projection-unavailable-skip](./quick/260623-ojf-stop-logging-projection-unavailable-skip/) |
+- Flask must be confirmed to import/serve on the system `python3` (3.14.0a2) at the start of Phase 1 — cp314 C-ext wheels can crash at import (project memory). If it fails, the stdlib `http.server` fallback becomes the tech for the whole milestone.
+- Read contention: dashboard reads can race a mid-write atomic workbook swap — must be tolerated (JSON-first reads, `read_only=True`, retry/skip) so a read never corrupts data or errors out (DASH-04).
+- "Why paired" depth (VIEW-02): v1 surfaces stored Correlated-Parlays `Reasoning`/`Correlation Group` + derived correlation metadata only; quantified leg-correlation modeling is a later enhancement, not v1.
 
 ## Deferred Items
 
+Items acknowledged and carried forward from previous milestone closes:
+
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Human UAT | Phase 04: live run_log.jsonl accumulation · 🩺 health Telegram alert · 🔁 repeated-failure alert | Acknowledged | v1.0 close (2026-06-22) |
-| Human UAT | Phase 05: real `git push` fires pre-push gate · `--no-verify` escape hatch | Acknowledged | v1.0 close (2026-06-22) |
-| Verification | Phase 04 & 05 VERIFICATION.md status=human_needed (live-env confirmation only) | Acknowledged | v1.0 close (2026-06-22) |
-| Nyquist | Validation incomplete: P1/P3 partial, P2/P4/P5 missing VALIDATION.md | Acknowledged | v1.0 close (2026-06-22) |
-| Hardening | Phase 05 review WR-01…05 (WR-02: no pytest subprocess timeout in CI gate) — non-critical | Acknowledged | v1.0 close (2026-06-22) |
-| Future req | Persist Player/Stat/Line/Side as real structured columns (removes string-parsing fragility) | Deferred past P1 | REQUIREMENTS.md |
-| Future req | Exact PrizePicks/Underdog Fantasy Score payout formulas (46-row residue) as first-class derivation | Higher-risk, separate workstream | REQUIREMENTS.md |
-| Nyquist | v2.0 VALIDATION incomplete: P1/P2 missing VALIDATION.md; P3/P4 draft (not nyquist_compliant) | Acknowledged | v2.0 close (2026-06-24) |
-| Human UAT | v2.0 Phase 4: live `weekly_metrics` Telegram/Obsidian delivery · `calibration.json` real-data check · operator Monday cron entry | Acknowledged | v2.0 close (2026-06-24) |
-| Audit (false-positive) | audit-open flagged debug `knowledge-base` (the resolved-sessions KB file, not an open session) + 4 quick tasks `missing` (all complete, recorded above) — no action needed | Acknowledged | v2.0 close (2026-06-24) |
+| Nyquist | v1.0 VALIDATION incomplete: P1/P3 partial, P2/P4/P5 missing | Acknowledged | v1.0 close (2026-06-22) |
+| Human UAT | v1.0 Phase 4/5: live run_log.jsonl · 🩺 health alert · 🔁 repeated-failure alert · real `git push` fires pre-push gate | Acknowledged | v1.0 close (2026-06-22) |
+| Nyquist | v2.0 VALIDATION incomplete: P1/P2 missing; P3/P4 draft (not nyquist_compliant) | Acknowledged | v2.0 close (2026-06-24) |
+| Human UAT | v2.0 Phase 4: live `weekly_metrics` delivery · `calibration.json` real-data check · operator Monday cron entry | Acknowledged | v2.0 close (2026-06-24) |
+| Future req | Persist Player/Stat/Line/Side as real structured columns (removes string-parsing fragility) | Deferred past v2.0 P1 | REQUIREMENTS.md |
 
 ## Session Continuity
 
-Last session: 2026-06-23T21:40:58.793Z
-Stopped at: Phase 04.1 context gathered
+Last session: 2026-06-24T04:00:00.000Z
+Stopped at: v3.0 roadmap created (ROADMAP.md, REQUIREMENTS.md traceability, STATE.md); Phase 1 ready to plan
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first phase with `/gsd-plan-phase 1`

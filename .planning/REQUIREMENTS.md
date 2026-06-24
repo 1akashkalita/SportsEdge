@@ -55,23 +55,23 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DASH-01 | TBD | Pending |
-| DASH-02 | TBD | Pending |
-| DASH-03 | TBD | Pending |
-| DASH-04 | TBD | Pending |
-| VIEW-01 | TBD | Pending |
-| VIEW-02 | TBD | Pending |
-| VIEW-03 | TBD | Pending |
-| ACTION-01 | TBD | Pending |
-| ACTION-02 | TBD | Pending |
-| ACTION-03 | TBD | Pending |
-| ACTION-04 | TBD | Pending |
+| DASH-01 | Phase 1 — Foundation & Data Layer | Pending |
+| DASH-02 | Phase 1 — Foundation & Data Layer | Pending |
+| DASH-03 | Phase 1 — Foundation & Data Layer | Pending |
+| DASH-04 | Phase 1 — Foundation & Data Layer | Pending |
+| VIEW-01 | Phase 2 — Read Views | Pending |
+| VIEW-02 | Phase 2 — Read Views | Pending |
+| VIEW-03 | Phase 2 — Read Views | Pending |
+| ACTION-01 | Phase 3 — Safe Actions | Pending |
+| ACTION-02 | Phase 3 — Safe Actions | Pending |
+| ACTION-03 | Phase 3 — Safe Actions | Pending |
+| ACTION-04 | Phase 3 — Safe Actions | Pending |
 
 **Coverage:**
 - v1 requirements: 11 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 11 ⚠️ (filled by roadmapper)
+- Mapped to phases: 11 (100%) ✓
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-24*
-*Last updated: 2026-06-24 after initial definition (v3.0 milestone start)*
+*Last updated: 2026-06-24 after roadmap creation (3 phases; 11/11 requirements mapped)*
