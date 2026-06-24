@@ -27,9 +27,9 @@ Audit: [milestones/v1.0-MILESTONE-AUDIT.md](./milestones/v1.0-MILESTONE-AUDIT.md
 
 **Phase Numbering:** Reset for this milestone — phases 1–4 are v2.0 work (prior milestone phases archived).
 
-- [ ] **Phase 1: Trustworthy Results** — Harden prop grading (name/stat matching), attach provenance, backfill June 8–21 MANUAL-REVIEW rows
+- [x] **Phase 1: Trustworthy Results** — Harden prop grading (name/stat matching), attach provenance, backfill June 8–21 MANUAL-REVIEW rows (verified 2026-06-24)
 - [x] **Phase 2: Slip Reconstruction and Grading** — Reconstruct model-recommended slips per day, grade against P1 results, populate Slip History, backfill June 8–21 (completed 2026-06-22)
-- [ ] **Phase 3: Slips-Only Bankroll** — Rebase bankroll to slip Net PnL; confidence-scaled stakes; props become accuracy-only
+- [x] **Phase 3: Slips-Only Bankroll** — Rebase bankroll to slip Net PnL; confidence-scaled stakes; props become accuracy-only (completed 2026-06-22)
 - [x] **Phase 4: Dual Metrics and Feedback** — Slip ROI + prop hit-rate reports; bounded outcome-to-selection feedback loop (completed 2026-06-23)
 
 ## Phase Details
@@ -55,7 +55,7 @@ Plans:
 - [x] 01-3-PLAN.md — stat_value_for_prop disposition table (3-tuple) + provenance columns end-to-end
 - [x] 01-4-PLAN.md — value-aware TERMINAL_RESULTS guard + parlay full-leg-set fix + side re-parser
 - [x] 01-5-PLAN.md — Layer 2: verify_results.py keyless firecrawl + resolve_missing_stat (flag default off)
-- [ ] 01-6-PLAN.md — June 8 ≥80% dry-run gate + June 8–21 backfill execution (human-verified)
+- [x] 01-6-PLAN.md — June 8 ≥80% dry-run gate + June 8–21 backfill execution (deliverable verified via 01-UAT + 01-VERIFICATION; gate passed at 94.6%)
 
 **Gap-closure plans** (from 01-UAT.md — 4 diagnosed grading defects; run via `/gsd:execute-phase 1 --gaps-only`):
 **Wave 1** *(parallel — no file overlap)*
@@ -145,10 +145,11 @@ Plans:
 | 3. Resilience | v1.0 | 3/4 | In Progress|  |
 | 4. Observability | v1.0 | 3/3 | Complete   | 2026-06-23 |
 | 5. CI | v1.0 | 3/3 | Complete | 2026-06-21 |
-| 1. Trustworthy Results | v2.0 | 0/6 | Planned | - |
-| 2. Slip Reconstruction and Grading | v2.0 | 0/3 | Planned | - |
-| 3. Slips-Only Bankroll | v2.0 | 4/4 | Awaiting phase verification | 2026-06-22 |
-| 4. Dual Metrics and Feedback | v2.0 | 0/3 | Planned | - |
+| 1. Trustworthy Results | v2.0 | 11/11 | Complete (verified 2026-06-24) | 2026-06-24 |
+| 2. Slip Reconstruction and Grading | v2.0 | 3/3 | Complete (verified 2026-06-24) | 2026-06-24 |
+| 3. Slips-Only Bankroll | v2.0 | 4/4 | Complete (verified) | 2026-06-22 |
+| 4. Dual Metrics and Feedback | v2.0 | 3/3 | Complete (verified) | 2026-06-23 |
+| 4.1 Close v2.0 Audit Gaps | v2.0 | 3/3 | Complete | 2026-06-23 |
 
 ### Phase 04.1: Close v2.0 audit gaps — forward confidence staking, daily prop-accuracy refresh, calibration dedup, WR-03 visibility (INSERTED)
 

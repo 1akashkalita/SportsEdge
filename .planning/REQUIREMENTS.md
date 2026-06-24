@@ -18,7 +18,7 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 
 - [x] **SLIPS-01**: The system reconstructs the model's recommended slips per day from saved projections/correlations (`build_slips.py` wired into the flow).
 - [x] **SLIPS-02**: Each slip's legs are graded against trustworthy (P1) results, and the Slip History sheet is populated (legs, slip result, payout multiplier, gross return, net PnL).
-- [ ] **SLIPS-03**: Slips are backfilled across June 8–21 as a backtest of the model's slip recommendations.
+- [x] **SLIPS-03**: Slips are backfilled across June 8–21 as a backtest of the model's slip recommendations.
 - [x] **SLIPS-04**: Slip success and individual-prop success are tracked separately (props = model accuracy, slips = money outcome).
 
 ### BANKROLL — Slips-only bankroll (Phase 3 / P3)
@@ -61,7 +61,7 @@ Scoped requirements for milestone v2.0. REQ-IDs are stable; traceability to phas
 | RESULTS-07 | Phase 1 | Complete |
 | SLIPS-01 | Phase 2 | Complete |
 | SLIPS-02 | Phase 2 | Complete |
-| SLIPS-03 | Phase 2 | Pending |
+| SLIPS-03 | Phase 2 | Complete |
 | SLIPS-04 | Phase 2 | Complete |
 | BANKROLL-01 | Phase 3 | Complete |
 | BANKROLL-02 | Phase 3 | Complete |
