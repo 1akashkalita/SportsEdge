@@ -22,10 +22,10 @@ Requirements for this milestone (v3.0). Each maps to exactly one roadmap phase.
 
 ### Safe Actions (guarded writes)
 
-- [ ] **ACTION-01**: Operator can trigger a data refresh / task re-run from the dashboard; it runs as a lock-aware subprocess (refuses if a run is already in progress), reports status, and never runs a task inline in the web process
-- [ ] **ACTION-02**: Operator can mark a slip as placed from the dashboard (additive column, atomic save)
-- [ ] **ACTION-03**: Operator can add a note to a slip or pick from the dashboard (additive, atomic save)
-- [ ] **ACTION-04**: No dashboard action changes gate logic, grades, EV, or exposure caps — all writes are additive-only and the betting pipeline is untouched
+- [x] **ACTION-01**: Operator can trigger a data refresh / task re-run from the dashboard; it runs as a lock-aware subprocess (refuses if a run is already in progress), reports status, and never runs a task inline in the web process
+- [x] **ACTION-02**: Operator can mark a slip as placed from the dashboard (additive column, atomic save)
+- [x] **ACTION-03**: Operator can add a note to a slip or pick from the dashboard (additive, atomic save)
+- [x] **ACTION-04**: No dashboard action changes gate logic, grades, EV, or exposure caps — all writes are additive-only and the betting pipeline is untouched
 
 ## v2 Requirements
 
@@ -62,10 +62,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | VIEW-01 | Phase 2 — Read Views | Complete |
 | VIEW-02 | Phase 2 — Read Views | Complete |
 | VIEW-03 | Phase 2 — Read Views | Complete |
-| ACTION-01 | Phase 3 — Safe Actions | Pending |
-| ACTION-02 | Phase 3 — Safe Actions | Pending |
-| ACTION-03 | Phase 3 — Safe Actions | Pending |
-| ACTION-04 | Phase 3 — Safe Actions | Pending |
+| ACTION-01 | Phase 3 — Safe Actions | Complete |
+| ACTION-02 | Phase 3 — Safe Actions | Complete |
+| ACTION-03 | Phase 3 — Safe Actions | Complete |
+| ACTION-04 | Phase 3 — Safe Actions | Complete |
 
 **Coverage:**
 - v1 requirements: 11 total
