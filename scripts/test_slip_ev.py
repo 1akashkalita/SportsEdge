@@ -228,7 +228,7 @@ class ChooseSlipTypeFlagOffParityTests(unittest.TestCase):
         self._patch = unittest.mock.patch.dict(os.environ, {}, clear=False)
         self._patch.start()
         self.addCleanup(self._patch.stop)
-        os.environ.pop("ENABLE_EV_SLIP_TYPE", None)
+        os.environ["ENABLE_EV_SLIP_TYPE"] = "0"  # force OFF, overriding ~/.hermes/.env fallback (hermetic)
 
     def test_flag_off_matrix_matches_mechanical_rule(self):
         for n in (2, 3, 4, 5, 6):
@@ -251,7 +251,7 @@ class ChooseSlipTypeFlagOffParityTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class MakeSlipAnnotationTests(unittest.TestCase):
     def test_annotations_present_when_flag_off(self):
-        os.environ.pop("ENABLE_EV_SLIP_TYPE", None)
+        os.environ["ENABLE_EV_SLIP_TYPE"] = "0"  # force OFF, overriding ~/.hermes/.env fallback (hermetic)
         legs = [leg(0.8, sport="MLB", player="A"), leg(0.78, sport="MLB", player="B"),
                 leg(0.75, sport="MLB", player="C")]
         slip = build_slips.make_slip("safest_3_leg", "Safest 3-leg", legs, {}, False, "x")
@@ -262,13 +262,13 @@ class MakeSlipAnnotationTests(unittest.TestCase):
         self.assertEqual(slip["slip_type"], "flex")
 
     def test_flag_off_two_leg_is_power_byte_identical(self):
-        os.environ.pop("ENABLE_EV_SLIP_TYPE", None)
+        os.environ["ENABLE_EV_SLIP_TYPE"] = "0"  # force OFF, overriding ~/.hermes/.env fallback (hermetic)
         legs = [leg(0.8, sport="MLB", player="A"), leg(0.78, sport="MLB", player="B")]
         slip = build_slips.make_slip("safest_2_leg", "Safest 2-leg", legs, {}, False, "x")
         self.assertEqual(slip["slip_type"], "power")
 
     def test_flag_off_name_override_still_forces_power(self):
-        os.environ.pop("ENABLE_EV_SLIP_TYPE", None)
+        os.environ["ENABLE_EV_SLIP_TYPE"] = "0"  # force OFF, overriding ~/.hermes/.env fallback (hermetic)
         legs = [leg(0.8, sport="MLB", player="A"), leg(0.78, sport="MLB", player="B"),
                 leg(0.75, sport="MLB", player="C")]
         slip = build_slips.make_slip("x", "Power play 3-leg", legs, {}, False, "x")
@@ -323,7 +323,7 @@ class LegExpansionTests(unittest.TestCase):
                 for i in range(n)]
 
     def test_flag_off_no_extended_category(self):
-        os.environ.pop("ENABLE_EV_SLIP_TYPE", None)
+        os.environ["ENABLE_EV_SLIP_TYPE"] = "0"  # force OFF, overriding ~/.hermes/.env fallback (hermetic)
         projs = self._projections(6)
         payload = build_slips.build_slips(projs, {"pairs": []}, "2026-06-24")
         # No >3-leg slip anywhere; ev_extended category (if present) empty.
