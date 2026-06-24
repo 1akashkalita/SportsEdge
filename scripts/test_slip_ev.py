@@ -290,8 +290,8 @@ class MakeSlipAnnotationTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class UnderdogParityTests(unittest.TestCase):
     def test_underdog_two_leg_power_even_flag_on(self):
-        # Underdog has no payout table; chooser cannot compute EV -> falls back to
-        # mechanical result. n==2 -> power, matching today.
+        # Underdog insured (flex) starts at 3 legs, so a 2-leg Underdog slip has no
+        # flex option -> power, matching today.
         cal = {"fingerprints": {"MLB": {"n_with_mop": 37}},
                "audit": [{"reason": "computed", "raw_ratio": 1.2569, "sport": "MLB"}]}
         legs = [leg(0.9, sport="MLB", player="A"), leg(0.9, sport="MLB", player="B")]
@@ -302,16 +302,25 @@ class UnderdogParityTests(unittest.TestCase):
             got = build_slips.choose_slip_type(legs, "Underdog", 2, details, calibration=cal)
         self.assertEqual(got, "power")
 
-    def test_underdog_three_leg_flex_even_flag_on(self):
-        cal = {"fingerprints": {"MLB": {"n_with_mop": 37}},
+    def test_underdog_three_leg_ev_driven_when_flag_on(self):
+        # Underdog now has real payout tables (non-insured power 6x + insured flex
+        # 3x/1x), so the chooser does EV-based power-vs-insured selection like PrizePicks.
+        cal = {"fingerprints": {"MLB": {"n_with_mop": 37}, "NBA": {"n_with_mop": 1}},
                "audit": [{"reason": "computed", "raw_ratio": 1.2569, "sport": "MLB"}]}
-        legs = [leg(0.9, sport="MLB", player=p) for p in ("A", "B", "C")]
-        for l in legs:
+        # Confident, trustworthy MLB legs -> non-insured power EV dominates -> power.
+        mlb = [leg(0.9, sport="MLB", player=p) for p in ("A", "B", "C")]
+        for l in mlb:
             l["platform"] = "Underdog"
-        details = build_slips.combined_probability_details(legs, {}, False)
+        d1 = build_slips.combined_probability_details(mlb, {}, False)
         with unittest.mock.patch.dict(os.environ, {"ENABLE_EV_SLIP_TYPE": "1"}):
-            got = build_slips.choose_slip_type(legs, "Underdog", 3, details, calibration=cal)
-        self.assertEqual(got, "flex")
+            self.assertEqual(build_slips.choose_slip_type(mlb, "Underdog", 3, d1, calibration=cal), "power")
+        # Uncalibrated NBA legs are untrustworthy -> downside-protected insured (flex).
+        nba = [leg(0.9, sport="NBA", player=p) for p in ("A", "B", "C")]
+        for l in nba:
+            l["platform"] = "Underdog"
+        d2 = build_slips.combined_probability_details(nba, {}, False)
+        with unittest.mock.patch.dict(os.environ, {"ENABLE_EV_SLIP_TYPE": "1"}):
+            self.assertEqual(build_slips.choose_slip_type(nba, "Underdog", 3, d2, calibration=cal), "flex")
 
 
 # ---------------------------------------------------------------------------

@@ -63,5 +63,21 @@
     }
   },
   "Dabble": {},
-  "Underdog": {}
+  "Underdog": {
+    "_comment": "Operator-confirmed actual Underdog payouts (2026-06-24). GROSS multipliers (gross = stake*mult; net = gross-stake). power = NON-INSURED/Standard (all-or-nothing). flex = INSURED/Flex Play (full if all hit; partial if exactly one misses; 0 below). Earlier break-even %s were superseded by these exact multipliers.",
+    "power": {
+      "2": {"2": 3.0},
+      "3": {"3": 6.0},
+      "4": {"4": 10.0},
+      "5": {"5": 20.0}
+    },
+    "flex": {
+      "3": {"3": 3.0, "2": 1.0, "1": 0.0, "0": 0.0},
+      "4": {"4": 6.0, "3": 1.5, "2": 0.0, "1": 0.0, "0": 0.0},
+      "5": {"5": 10.0, "4": 2.5, "3": 0.0, "2": 0.0, "1": 0.0, "0": 0.0},
+      "6": {"6": 25.0, "5": 2.6, "4": 0.0, "3": 0.0, "2": 0.0, "1": 0.0, "0": 0.0},
+      "7": {"7": 50.0, "6": 2.75, "5": 0.0, "4": 0.0, "3": 0.0, "2": 0.0, "1": 0.0, "0": 0.0},
+      "8": {"8": 100.0, "7": 3.0, "6": 0.0, "5": 0.0, "4": 0.0, "3": 0.0, "2": 0.0, "1": 0.0, "0": 0.0}
+    }
+  }
 }
