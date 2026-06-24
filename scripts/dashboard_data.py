@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -128,8 +129,11 @@ def read_sheet_rows(xlsx: Path | str, sheet: str) -> list[dict[str, Any]] | None
             result.append(dict(zip(headers, row)))
         return result
 
-    except (WorkbookAccessError, FileNotFoundError, Exception):
-        # Last-known-good: locked or unreadable workbook → None (D-01)
+    except (WorkbookAccessError, FileNotFoundError, OSError, zipfile.BadZipFile):
+        # Last-known-good: locked / mid-swap / unreadable workbook → None (D-01).
+        # Narrowed from a bare Exception catch (CR-01) so a genuine reader bug
+        # (KeyError, TypeError, openpyxl schema regression) surfaces instead of
+        # being silently disguised as "locked".
         return None
     finally:
         # Always release file handle — read_only keeps the zip open (Pitfall 4)

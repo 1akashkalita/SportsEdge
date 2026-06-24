@@ -12,10 +12,12 @@ files_reviewed_list:
   - scripts/test_dashboard_data.py
 findings:
   critical: 1
+  critical_resolved: 1
   warning: 5
   info: 4
   total: 10
 status: issues_found
+notes: "CR-01 (blocker) resolved 2026-06-24; 5 warnings + 4 info deferred to Phase 2"
 ---
 
 # Phase 01: Code Review Report
@@ -57,6 +59,8 @@ and clarity issues described below.
 ## Critical Issues
 
 ### CR-01: `read_sheet_rows` swallows all exceptions (including its own bugs) as "locked"
+
+> **RESOLVED 2026-06-24** — handler narrowed to `(WorkbookAccessError, FileNotFoundError, OSError, zipfile.BadZipFile)` in `dashboard_data.py:132`; the `finally`-close is preserved and all 5 data-layer tests stay green. Genuine reader bugs (KeyError/TypeError/schema regressions) now surface instead of being disguised as "locked".
 
 **File:** `scripts/dashboard_data.py:131-133`
 **Issue:** The handler is `except (WorkbookAccessError, FileNotFoundError, Exception):`.
