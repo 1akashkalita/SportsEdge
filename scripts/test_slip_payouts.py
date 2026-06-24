@@ -98,6 +98,13 @@ class TestSlipPayouts(unittest.TestCase):
         ]
         self.assertEqual(pick_history_rows_count_for_bankroll(rows), 1)
 
+    def test_prizepicks_has_no_two_leg_flex_table(self):
+        # PrizePicks offers no 2-leg flex; the EV slip-type chooser relies on this
+        # to keep 2-leg PrizePicks slips as power. Guards the payout table contract.
+        self.assertIsNone(payout_multiplier("PrizePicks", "flex", 2, 2))
+        # Power 2-of-2 does exist (3.0x), confirming the asymmetry is intentional.
+        self.assertEqual(payout_multiplier("PrizePicks", "power", 2, 2), 3.0)
+
 
 if __name__ == "__main__":
     unittest.main()
