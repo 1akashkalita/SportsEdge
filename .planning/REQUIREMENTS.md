@@ -16,9 +16,9 @@ Requirements for this milestone (v3.0). Each maps to exactly one roadmap phase.
 
 ### Read Views
 
-- [ ] **VIEW-01**: Operator can view today's props/picks grouped by platform and sport, showing +EV, model probability, edge, and confidence, with platform/sport filtering and EV sorting
-- [ ] **VIEW-02**: Operator can view all slips (status, payout, legs) with a "why these legs are paired" insight (Correlated Parlays `Reasoning`/`Correlation Group`; derived rationale for general slips)
-- [ ] **VIEW-03**: Operator can view win/loss history overall and per sport, including a bankroll/ROI time-series chart and a per-confidence-tier breakdown
+- [x] **VIEW-01**: Operator can view today's props/picks grouped by platform and sport, showing +EV, model probability, edge, and confidence, with platform/sport filtering and EV sorting
+- [x] **VIEW-02**: Operator can view all slips (status, payout, legs) with a "why these legs are paired" insight (Correlated Parlays `Reasoning`/`Correlation Group`; derived rationale for general slips)
+- [x] **VIEW-03**: Operator can view win/loss history overall and per sport, including a bankroll/ROI time-series chart and a per-confidence-tier breakdown
 
 ### Safe Actions (guarded writes)
 
@@ -59,9 +59,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DASH-02 | Phase 1 — Foundation & Data Layer | Complete |
 | DASH-03 | Phase 1 — Foundation & Data Layer | Complete |
 | DASH-04 | Phase 1 — Foundation & Data Layer | Complete |
-| VIEW-01 | Phase 2 — Read Views | Pending |
-| VIEW-02 | Phase 2 — Read Views | Pending |
-| VIEW-03 | Phase 2 — Read Views | Pending |
+| VIEW-01 | Phase 2 — Read Views | Complete |
+| VIEW-02 | Phase 2 — Read Views | Complete |
+| VIEW-03 | Phase 2 — Read Views | Complete |
 | ACTION-01 | Phase 3 — Safe Actions | Pending |
 | ACTION-02 | Phase 3 — Safe Actions | Pending |
 | ACTION-03 | Phase 3 — Safe Actions | Pending |
