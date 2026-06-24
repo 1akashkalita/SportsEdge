@@ -25,15 +25,15 @@ expected: Open /history in a browser. A Chart.js line chart renders with bankrol
 result: [pending]
 
 ### 4. CR-01 decision — /slips load time at scale (BLOCKING)
-expected: Open /slips in a browser with a real master_pnl.xlsx containing ~88 slips and measure page load time. Page should load in under 5 seconds. CURRENT BEHAVIOR: the slips route performs O(N slips × 2 workbook opens) with a 1s sleep per open via `wait_for_stable_file` — measured at 184 seconds with a live workbook (test_slips_200). Renders correctly but unusable at scale. Operator must decide: (a) fix CR-01 before phase is accepted, or (b) accept current behavior with a tracked follow-up.
-result: [pending]
+expected: Open /slips in a browser with a real master_pnl.xlsx containing ~88 slips and measure page load time. Page should load in under 5 seconds.
+result: RESOLVED — operator chose "Fix CR-01 now". get_all_slips() now builds a Correlated Parlays index once per distinct slip date (was O(N slips × 2 workbook opens)), and the read-only index fan-out passes delay=0.0 to skip the 1s settle sleep. Measured: test_slips_200 dropped from 184s → 1.86s. Regression test `test_correlated_parlays_read_once_per_date` pins the once-per-date contract.
 
 ## Summary
 
 total: 4
-passed: 0
+passed: 1
 issues: 0
-pending: 4
+pending: 3
 skipped: 0
 blocked: 0
 
