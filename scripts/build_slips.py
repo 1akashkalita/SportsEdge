@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import unicodedata
 from datetime import datetime
@@ -24,6 +25,173 @@ from stake_sizing import apply_confidence_stakes
 ROOT = Path(__file__).resolve().parents[1]
 SLIP_DIR = ROOT / "data" / "research" / "slips"
 DATA_DIR = ROOT / "data"
+CALIBRATION_PATH = DATA_DIR / "research" / "calibration.json"
+HERMES_ENV = Path.home() / ".hermes" / ".env"
+
+# --- EV-based slip-type reasoning engine (all behavior flag-gated, default OFF) ---
+# Eligibility floor and shrink anchor: the model's per-leg over_probability must
+# already exceed 0.5238 to be eligible (is_eligible), so it is the natural anchor
+# the calibration shrink pulls overconfident probabilities back toward.
+EV_SHRINK_ANCHOR = 0.5238
+# Default conservative cushion: power is only chosen when P'_all clears the
+# break-even by this fraction, so model overconfidence cannot flip a true-negative
+# slip into an apparent-positive one. Operator-tunable via EV_SLIP_MARGIN.
+EV_MARGIN_DEFAULT = 0.15
+# Calibration ratio used when a sport is uncalibrated (n_with_mop < N_GATE). It is
+# intentionally pessimistic (heavy shrink) AND marks the leg untrustworthy.
+EV_UNCALIBRATED_RATIO = 1.30
+# Minimum graded sample before a sport's empirical calibration ratio is trusted.
+EV_CALIBRATION_N_GATE = 30
+# A leg with fewer than this many historical samples is untrustworthy for power.
+EV_MIN_LEG_SAMPLE = 8
+
+
+def _env_value(key: str) -> str | None:
+    """Read a config value from process env, then ~/.hermes/.env (KEY=VALUE).
+
+    Self-contained mirror of sports_system_runner.env_value; the runner is NOT
+    imported here because importing it triggers heavy module-load side effects.
+    """
+    value = os.environ.get(key)
+    if value:
+        return value.strip().strip('"').strip("'")
+    try:
+        if not HERMES_ENV.exists():
+            return None
+        for line in HERMES_ENV.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            k, v = stripped.split("=", 1)
+            if k.strip() == key:
+                return v.strip().strip('"').strip("'") or None
+    except Exception:
+        return None
+    return None
+
+
+def _env_bool(key: str, default: bool) -> bool:
+    raw = _env_value(key)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _ev_slip_type_enabled() -> bool:
+    """Master flag gating the EV chooser AND leg-count expansion (default OFF)."""
+    return _env_bool("ENABLE_EV_SLIP_TYPE", False)
+
+
+def _underdog_slip_payouts_enabled() -> bool:
+    """Reserved morning toggle. No-op while the Underdog payout table is empty;
+    read so the flag exists. Underdog slips must behave exactly as today."""
+    return _env_bool("ENABLE_UNDERDOG_SLIP_PAYOUTS", False)
+
+
+def _ev_margin() -> float:
+    raw = _env_value("EV_SLIP_MARGIN")
+    if raw is None:
+        return EV_MARGIN_DEFAULT
+    try:
+        val = float(raw)
+        return val if val >= 0 else EV_MARGIN_DEFAULT
+    except (TypeError, ValueError):
+        return EV_MARGIN_DEFAULT
+
+
+def _load_calibration() -> dict[str, Any]:
+    """Load calibration.json; return an empty dict on any failure (then every
+    sport reads as uncalibrated -> untrustworthy -> conservative flex)."""
+    try:
+        if CALIBRATION_PATH.exists():
+            return json.loads(CALIBRATION_PATH.read_text())
+    except Exception:
+        pass
+    return {}
+
+
+def calibration_ratio(sport: Any, calibration: dict[str, Any]) -> tuple[float, bool]:
+    """Return (ratio, trusted) for a sport.
+
+    ratio = the latest "computed" audit raw_ratio for that sport when the sport's
+    fingerprint n_with_mop >= EV_CALIBRATION_N_GATE; otherwise EV_UNCALIBRATED_RATIO
+    and trusted=False. raw_ratio is model_implied/empirical (>1 == overconfident).
+    """
+    sport_key = str(sport or "").upper()
+    fingerprints = (calibration or {}).get("fingerprints", {}) or {}
+    n_with_mop = 0
+    fp = fingerprints.get(sport_key)
+    if isinstance(fp, dict):
+        try:
+            n_with_mop = int(fp.get("n_with_mop") or 0)
+        except (TypeError, ValueError):
+            n_with_mop = 0
+    if n_with_mop < EV_CALIBRATION_N_GATE:
+        return EV_UNCALIBRATED_RATIO, False
+    ratio: float | None = None
+    for entry in (calibration or {}).get("audit", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("sport") or "").upper() != sport_key:
+            continue
+        if entry.get("reason") == "computed" and entry.get("raw_ratio") is not None:
+            try:
+                ratio = float(entry.get("raw_ratio"))
+            except (TypeError, ValueError):
+                continue
+    if ratio is None or ratio <= 0:
+        return EV_UNCALIBRATED_RATIO, False
+    return ratio, True
+
+
+def shrink_probability(p: float, ratio: float) -> float:
+    """Pull an overconfident probability back toward the eligibility anchor.
+
+    p' = anchor + (p - anchor) / ratio. ratio>1 shrinks toward the anchor;
+    ratio==1 is the identity. Result is clamped to [0, 1].
+    """
+    if ratio is None or ratio <= 0:
+        ratio = 1.0
+    shrunk = EV_SHRINK_ANCHOR + (float(p) - EV_SHRINK_ANCHOR) / ratio
+    return max(0.0, min(1.0, shrunk))
+
+
+def poisson_binomial(probs: list[float]) -> list[float]:
+    """Distribution of the number of successes over independent Bernoulli legs.
+
+    Returns a list of length len(probs)+1 where index k is P(exactly k hits).
+    O(n^2) DP; n<=6 here.
+    """
+    dist = [1.0]
+    for p in probs:
+        p = max(0.0, min(1.0, float(p)))
+        nxt = [0.0] * (len(dist) + 1)
+        for k, prob in enumerate(dist):
+            nxt[k] += prob * (1.0 - p)
+            nxt[k + 1] += prob * p
+        dist = nxt
+    return dist
+
+
+def ev_power(probs: list[float], full_win_multiplier: float) -> float:
+    """Expected gross-return multiple of a power slip: P(all hit) * mult."""
+    p_all = 1.0
+    for p in probs:
+        p_all *= max(0.0, min(1.0, float(p)))
+    return p_all * float(full_win_multiplier)
+
+
+def ev_flex(probs: list[float], win_table: dict[int, float]) -> float:
+    """Expected gross-return multiple of a flex slip via Poisson-binomial.
+
+    win_table maps winning-leg-count -> gross multiplier. EV = sum_k P(k) * mult[k].
+    """
+    dist = poisson_binomial(probs)
+    ev = 0.0
+    for k, mult in win_table.items():
+        if 0 <= int(k) < len(dist):
+            ev += dist[int(k)] * float(mult)
+    return ev
 
 SAFE_FLAGS = {"BAD MATCHUP"}
 KAT_NAMES = {"karl-anthony towns", "karl anthony towns"}
@@ -390,6 +558,153 @@ def combined_probability(legs: list[dict[str, Any]], pair_map: dict[frozenset[st
     return float(combined_probability_details(legs, pair_map, correlated)["combined_probability"])
 
 
+def _flex_win_table(platform: str, leg_count: int) -> dict[int, float] | None:
+    """Gross multipliers per winning-leg-count for a platform's flex slip.
+
+    Returns None when the platform has no flex table for that leg count (e.g.
+    PrizePicks n==2, or any Underdog leg count — Underdog tables are empty).
+    """
+    table: dict[int, float] = {}
+    for k in range(leg_count, 0, -1):
+        mult = payout_multiplier(platform, "flex", leg_count, k)
+        if mult is not None:
+            table[k] = float(mult)
+    return table or None
+
+
+def _leg_trustworthy(leg: dict[str, Any], calibration: dict[str, Any]) -> tuple[bool, float]:
+    """A leg is trustworthy for a power recommendation only when its sport is
+    calibrated (>= N_GATE graded), its sample size >= EV_MIN_LEG_SAMPLE, and it
+    carries a probability. Returns (trustworthy, calibration_ratio_used).
+    """
+    ratio, sport_trusted = calibration_ratio(leg.get("sport"), calibration)
+    prob = _to_float(leg.get("over_probability"))
+    try:
+        sample = int(leg.get("sample_size") or 0)
+    except (TypeError, ValueError):
+        sample = 0
+    trustworthy = bool(sport_trusted and prob is not None and sample >= EV_MIN_LEG_SAMPLE)
+    return trustworthy, ratio
+
+
+def choose_slip_type(
+    legs: list[dict[str, Any]],
+    platform: Any,
+    leg_count: int,
+    combined_probability_details_result: dict[str, Any],
+    calibration: dict[str, Any] | None = None,
+) -> str:
+    """Choose 'power' vs 'flex' by conservative, calibration-shrunk expected value.
+
+    Flag OFF (default): byte-identical to today's mechanical rule —
+    "power" if leg_count == 2 else "flex". The name-override semantics in
+    make_slip are preserved by make_slip itself, not here.
+
+    Flag ON: pick power ONLY when every guardrail holds (see DECISION RULE).
+    Any impossibility or untrusted input falls back to the mechanical result.
+    """
+    mechanical = "power" if leg_count == 2 else "flex"
+    if not _ev_slip_type_enabled():
+        return mechanical
+
+    platform_name = platform if platform is not None else "PrizePicks"
+    cal = calibration if calibration is not None else _load_calibration()
+
+    full_win_mult = payout_multiplier(platform_name, "power", leg_count, leg_count)
+    flex_table = _flex_win_table(platform_name, leg_count)
+    # No power table (or no flex alternative) -> EV comparison impossible.
+    # PrizePicks n==2 has a power table but NO flex table -> always power
+    # (preserves current behavior). Underdog has neither -> mechanical fallback.
+    if full_win_mult is None:
+        return mechanical
+    if flex_table is None:
+        # Power exists but flex does not (PrizePicks 2-leg): power is the only option.
+        return "power"
+
+    # Per-leg shrunk probabilities + trustworthiness.
+    shrunk: list[float] = []
+    all_trustworthy = True
+    for leg in legs:
+        prob = _to_float(leg.get("over_probability"))
+        trustworthy, ratio = _leg_trustworthy(leg, cal)
+        if not trustworthy:
+            all_trustworthy = False
+        if prob is None:
+            # Missing probability: cannot compute EV safely -> conservative flex.
+            return "flex"
+        shrunk.append(shrink_probability(prob, ratio))
+
+    ev_power_val = ev_power(shrunk, full_win_mult)
+    ev_flex_val = ev_flex(shrunk, flex_table)
+    p_all = 1.0
+    for p in shrunk:
+        p_all *= p
+    break_even = 1.0 / float(full_win_mult)
+    margin = _ev_margin()
+
+    correlated = bool(combined_probability_details_result.get("combined_probability_is_approximate"))
+
+    pick_power = (
+        ev_power_val >= ev_flex_val
+        and p_all >= break_even * (1.0 + margin)
+        and all_trustworthy
+        and not correlated
+    )
+    return "power" if pick_power else "flex"
+
+
+def _ev_annotations(
+    legs: list[dict[str, Any]],
+    platform: Any,
+    leg_count: int,
+    combined_probability_details_result: dict[str, Any],
+    calibration: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compute the additive EV annotation block attached to every slip.
+
+    Always computed (regardless of the flag) for operator visibility. Uses the
+    same calibration-shrunk inputs the chooser would use. Never raises.
+    """
+    platform_name = platform if platform is not None else "PrizePicks"
+    cal = calibration if calibration is not None else _load_calibration()
+    margin = _ev_margin()
+
+    full_win_mult = payout_multiplier(platform_name, "power", leg_count, leg_count)
+    flex_table = _flex_win_table(platform_name, leg_count)
+
+    shrunk: list[float] = []
+    all_trustworthy = True
+    ratios: dict[str, float] = {}
+    for leg in legs:
+        prob = _to_float(leg.get("over_probability"))
+        trustworthy, ratio = _leg_trustworthy(leg, cal)
+        ratios[str(leg.get("sport") or "").upper()] = ratio
+        if not trustworthy:
+            all_trustworthy = False
+        if prob is not None:
+            shrunk.append(shrink_probability(prob, ratio))
+
+    ev_power_val: float | None = None
+    ev_flex_val: float | None = None
+    if shrunk and len(shrunk) == leg_count:
+        if full_win_mult is not None:
+            ev_power_val = round(ev_power(shrunk, full_win_mult), 6)
+        if flex_table is not None:
+            ev_flex_val = round(ev_flex(shrunk, flex_table), 6)
+
+    recommended = choose_slip_type(
+        legs, platform_name, leg_count, combined_probability_details_result, calibration=cal
+    )
+    return {
+        "ev_power": ev_power_val,
+        "ev_flex": ev_flex_val,
+        "ev_recommended_type": recommended,
+        "ev_margin_used": margin,
+        "ev_calibration_ratio": ratios,
+        "ev_all_legs_trustworthy": all_trustworthy,
+    }
+
+
 def leg_summary(prop: dict[str, Any]) -> dict[str, Any]:
     return {
         "prop_id": projection_key(prop),
@@ -432,13 +747,22 @@ def make_slip(category: str, name: str, legs: list[dict[str, Any]], pair_map: di
     legs = deduped
     probability = combined_probability_details(legs, pair_map, correlated)
     leg_count = len(legs)
-    slip_type = "power" if leg_count == 2 else "flex"
-    if "power" in name.lower():
-        slip_type = "power"
     # Real platform shared by all legs. Unlabeled fixtures (platform=None) are
     # treated as a single legacy group whose payout table is PrizePicks.
     platform = slip_platform(legs)
     payout_platform = platform if platform is not None else "PrizePicks"
+    # Slip type: when ENABLE_EV_SLIP_TYPE is OFF (default), choose_slip_type returns
+    # the byte-identical mechanical result ("power" if leg_count==2 else "flex").
+    # When ON, it returns the conservative EV-based recommendation.
+    slip_type = choose_slip_type(legs, payout_platform, leg_count, probability)
+    # Name-override is preserved unchanged: an explicit "power" in the slip name
+    # forces a power slip in either flag state (operator-named power categories).
+    if "power" in name.lower():
+        slip_type = "power"
+    # Additive EV annotations (always present, for operator visibility). These are
+    # NEW keys only; they never rename/remove existing keys and never change the
+    # slip_type when the flag is OFF.
+    ev_annotations = _ev_annotations(legs, payout_platform, leg_count, probability)
     # Underdog payout tables are intentionally empty; payout_multiplier returns
     # None there. Keep None (rendered as "n/a"); never substitute another
     # platform's numbers — a wrong payout mis-states real money.
@@ -454,6 +778,7 @@ def make_slip(category: str, name: str, legs: list[dict[str, Any]], pair_map: di
         "leg_count": leg_count,
         "standard_payout_multiplier_if_perfect": standard_payout_multiplier,
         **probability,
+        **ev_annotations,
         "combined_ev_score": round(sum(float(x.get("expected_value") or 0) for x in legs), 4),
         "explanation": explanation,
     }

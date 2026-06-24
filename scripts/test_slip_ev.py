@@ -183,9 +183,15 @@ class ChooseSlipTypeFlagOnTests(unittest.TestCase):
         self.assertEqual(self._choose(legs), "flex")
 
     def test_raw_power_edge_but_within_margin_picks_flex(self):
-        # Modest MLB probs where EV_power may exceed EV_flex by raw numbers but
-        # P'_all does not clear (1/mult)*(1+margin) -> conservative flex.
-        legs = [leg(0.62, sport="MLB", player=p) for p in ("A", "B", "C")]
+        # raw=0.585 MLB shrinks to ~0.5725: P'_all=0.1876 clears the raw break-even
+        # (0.1667) so EV_power (~1.13) > EV_flex (~0.98) > 1.0 looks positive, but it
+        # does NOT clear (1/mult)*(1+margin)=0.1917 -> conservative rule picks flex.
+        legs = [leg(0.585, sport="MLB", player=p) for p in ("A", "B", "C")]
+        # Sanity: confirm this is genuinely the within-margin band.
+        shr = build_slips.shrink_probability(0.585, 1.2569)
+        p_all = shr ** 3
+        self.assertGreater(p_all, 1.0 / 6.0)
+        self.assertLess(p_all, (1.0 / 6.0) * 1.15)
         self.assertEqual(self._choose(legs), "flex")
 
     def test_low_sample_leg_forces_flex(self):
