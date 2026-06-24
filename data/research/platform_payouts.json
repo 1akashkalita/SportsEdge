@@ -63,13 +63,5 @@
     }
   },
   "Dabble": {},
-  "Underdog": {
-    "_comment": "power = NON-INSURED (all-or-nothing). Multipliers derived 2026-06-24 from the operator's stated actual per-leg break-evens (2=53.5%, 3=53.7%, 4=56.1%, 5=55.0%) as mult = 1/breakeven^n. NOTE: these win-multipliers are break-even-derived; if the real Underdog payouts are the round 3/6/10/20x, switch them (affects winning-slip PnL only; losses are -stake regardless). INSURED (flex / partial-payout) table is intentionally OMITTED: a single break-even does not determine the full + (n-1) partial multipliers, so Underdog flex slips remain MANUAL REVIEW until the operator supplies actual insured payouts.",
-    "power": {
-      "2": {"2": 3.494},
-      "3": {"3": 6.458},
-      "4": {"4": 10.096},
-      "5": {"5": 19.87}
-    }
-  }
+  "Underdog": {}
 }
