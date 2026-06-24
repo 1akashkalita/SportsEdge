@@ -8,17 +8,20 @@ The Hermes sports-betting automation is an existing, in-use Python system that r
 
 Every cron job and pipeline runs correctly on schedule — no timeouts, no task-failure alerts — so the operator can stop babysitting it and confidently move on to model/accuracy work next.
 
-## Current Milestone: v2.0 Slips & Props Tracking
+## Current Milestone: v3.0 Local Dashboard
 
-**Goal:** Make the bankroll reflect actual DFS slips (not individual props), track and grade both slips and props, backfill from inception (2026-06-08), and feed realized outcomes back into selection — so the operator can finally tell whether the model is improving.
+**Goal:** A `localhost` web dashboard so the operator can *see* the whole system at a glance — today's props/picks by platform & sport (with +EV and probabilities), all slips with why-they're-paired insight, and win/loss history overall + per sport — plus a few safe actions, without touching any betting logic.
 
-**Why now:** v1.0 made the pipeline run reliably; investigation then showed the bankroll has been frozen because grading was broken and ~37% of props never resolved (MANUAL REVIEW), and slips were never recorded at all. Trustworthy measurement must come before any model tuning.
+**Why now:** v1.0 made the pipeline reliable and v2.0 made measurement trustworthy. Everything the operator needs to judge the system now lives in Excel workbooks, JSON artifacts, Obsidian, and Telegram — with no single place to view it. A dashboard is low-risk (almost entirely a read-layer over already-persisted data) and is the surface for the project's core value: "can I tell whether the model is improving." It is the first of a 4-milestone post-v2.0 arc and is intentionally sequenced *before* the model work so the operator has a window into the data the later milestones produce.
 
-**Target features (strict dependency chain P1→P2→P3→P4):**
-- **P1 — Trustworthy results:** drive the ~37% prop MANUAL-REVIEW rate toward zero via in-process name/stat matching hardening, then a flagged, subprocess-isolated firecrawl keyless scrape for the residue; add `Result Source`/`Result Confidence` provenance; money-safe June 8–21 backfill. *(Spec approved & committed: `docs/superpowers/specs/2026-06-21-trustworthy-results-design.md`.)*
-- **P2 — Slips: reconstruct → grade → record:** wire `build_slips.py` per day, populate the always-empty Slip History sheet (forward + June 8–21 backtest of the model's recommended slips).
-- **P3 — Slips-only bankroll:** rebase bankroll to sum slip Net PnL with confidence-scaled stakes; props become accuracy-only (out of the bankroll).
-- **P4 — Dual metrics + feedback into selection:** report slip ROI + prop hit-rate; feed realized outcomes back into projection/gate tuning.
+**Target features:**
+- **Today view:** props/picks grouped by platform & sport with +EV, model probability, edge, confidence; filter by platform/sport, sort by EV.
+- **Slips view:** all slips (status, payout, legs) with "why paired" insight — surfaced from the Correlated Parlays `Reasoning`/`Correlation Group`, derived for general slips.
+- **History view:** W/L overall + per sport, bankroll/ROI time-series chart, per-confidence-tier breakdown.
+- **Safe actions (guarded writes):** refresh/re-run a task via subprocess (lock-aware, async), mark a slip placed, add a note — additive columns via atomic save; never touches gate logic / grades / EV / exposure.
+- **Tech foundation:** Flask/Jinja + openpyxl `read_only` + Chart.js/Pico.css via CDN, bound to `127.0.0.1`, launched via `python3 dashboard.py`; first task verifies Flask imports on Python 3.14.0a2 (stdlib `http.server` fallback).
+
+*(Spec approved & committed: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md`. Roadmap context — M2 model accuracy & calibration, M3 line-change re-eval, M4 live in-game — in `docs/superpowers/specs/2026-06-23-model-accuracy-calibration-design.md`.)*
 
 ## Current State
 
@@ -57,9 +60,13 @@ Every cron job and pipeline runs correctly on schedule — no timeouts, no task-
 
 ### Active
 
-<!-- This milestone. Hypotheses until shipped and validated. -->
+<!-- This milestone (v3.0 Local Dashboard). Hypotheses until shipped and validated. See REQUIREMENTS.md for REQ-IDs. -->
 
-- (none — all milestone requirements validated)
+- Operator can launch a localhost dashboard with one command and view today's props/picks by platform & sport with +EV, model probability, edge, and confidence
+- Operator can view all slips with status/payout/legs and a "why these legs are paired" insight
+- Operator can view win/loss history overall and per sport, plus a bankroll/ROI chart and per-confidence-tier breakdown
+- Operator can trigger safe actions from the dashboard (refresh/re-run a task, mark a slip placed, add a note) without affecting gate logic, grades, EV, or exposure
+- Dashboard reads existing persisted data without corrupting it and uses an additive-only, atomic write path for its safe actions
 
 ### Out of Scope
 
@@ -123,4 +130,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-24 — v2.0 "Slips & Props Tracking" milestone CLOSED (5 phases / 24 plans, 18/18 requirements; P1+P2 formally verified, RESULTS-07/SLIPS-03 debt closed; archived + tagged v2.0). Next: model/accuracy milestone via /gsd-new-milestone. Prior: 2026-06-23 after v2.0 Phase 04.1 (Close v2.0 Audit Gaps) complete — forward confidence staking now live (BANKROLL-02 forward path), daily Prop-Accuracy refresh, calibration dedup, and WR-03 partial visibility shipped; 10/10 must-haves verified, zero new test failures. RESULTS-07/SLIPS-03 verification debt routed to /gsd-verify-work. Prior: v2.0 Phase 4 (Dual Metrics and Feedback) complete — closes the v2.0 milestone (METRICS-01..03 validated; 3 live human-UAT items pending). Prior: v2.0 Phase 3 (Slips-Only Bankroll) complete — bankroll rebased to a slips-only basis from 2026-06-08 (BANKROLL-01..04 validated). Prior: v1.0 Stability Hardening milestone close — archived to milestones/, tagged v1.0 (17/17 plans, 16/16 requirements validated; audit status tech_debt, no blockers)*
+*Last updated: 2026-06-24 — v3.0 "Local Dashboard" milestone STARTED (first of a 4-milestone post-v2.0 arc: dashboard → calibration → line-change re-eval → live in-game; design docs in docs/superpowers/specs/). Prior: 2026-06-24 — v2.0 "Slips & Props Tracking" milestone CLOSED (5 phases / 24 plans, 18/18 requirements; P1+P2 formally verified, RESULTS-07/SLIPS-03 debt closed; archived + tagged v2.0). Prior: 2026-06-23 after v2.0 Phase 04.1 (Close v2.0 Audit Gaps) complete — forward confidence staking now live (BANKROLL-02 forward path), daily Prop-Accuracy refresh, calibration dedup, and WR-03 partial visibility shipped; 10/10 must-haves verified, zero new test failures. RESULTS-07/SLIPS-03 verification debt routed to /gsd-verify-work. Prior: v2.0 Phase 4 (Dual Metrics and Feedback) complete — closes the v2.0 milestone (METRICS-01..03 validated; 3 live human-UAT items pending). Prior: v2.0 Phase 3 (Slips-Only Bankroll) complete — bankroll rebased to a slips-only basis from 2026-06-08 (BANKROLL-01..04 validated). Prior: v1.0 Stability Hardening milestone close — archived to milestones/, tagged v1.0 (17/17 plans, 16/16 requirements validated; audit status tech_debt, no blockers)*
