@@ -446,7 +446,7 @@ class TestSlipsAccessor(unittest.TestCase):
 
         calls = {"Correlated Parlays": 0}
 
-        def fake_read_sheet_rows(xlsx: Any, sheet: str) -> Any:
+        def fake_read_sheet_rows(xlsx: Any, sheet: str, delay: float = 1.0) -> Any:
             if sheet == "Slip History":
                 return slip_rows
             if sheet == "Correlated Parlays":

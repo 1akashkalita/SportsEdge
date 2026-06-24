@@ -88,7 +88,9 @@ def read_json(path: Path | str) -> dict | list | None:
 # read_sheet_rows — lock-tolerant workbook sheet accessor
 # ---------------------------------------------------------------------------
 
-def read_sheet_rows(xlsx: Path | str, sheet: str) -> list[dict[str, Any]] | None:
+def read_sheet_rows(
+    xlsx: Path | str, sheet: str, delay: float = 1.0
+) -> list[dict[str, Any]] | None:
     """Return a list of header-mapped row dicts from a workbook sheet.
 
     Return values:
@@ -103,13 +105,20 @@ def read_sheet_rows(xlsx: Path | str, sheet: str) -> list[dict[str, Any]] | None
     Args:
         xlsx:  Path to the .xlsx workbook file.
         sheet: Name of the sheet to read.
+        delay: Per-attempt stable-file settle delay passed to safe_load_workbook
+               (seconds). Defaults to 1.0 to match the cron write-path's mid-write
+               detection. Read-only callers that fan out over many workbooks may
+               pass a smaller value (e.g. 0.0) to avoid O(files) blocking sleeps;
+               on the rare mid-write read this just yields None (last-known-good).
 
     Returns:
         list of row dicts, empty list, or None.
     """
     wb = None
     try:
-        wb = safe_load_workbook(Path(xlsx), read_only=True, data_only=True)
+        wb = safe_load_workbook(
+            Path(xlsx), read_only=True, data_only=True, delay=delay
+        )
 
         if sheet not in wb.sheetnames:
             return []
@@ -413,6 +422,13 @@ def get_all_slips() -> dict[str, Any]:
         locked = True
         slip_rows = []
 
+    # Tier-1 why-paired index, built ONCE (CR-01). The previous implementation
+    # called _lookup_correlated_parlays() per slip, re-opening BOTH per-sport
+    # workbooks for every slip; with a 1s wait_for_stable_file sleep per open an
+    # 88-slip page took ~184s. Reading each (sport, date) workbook a single time
+    # collapses that to a handful of opens regardless of slip count.
+    parlay_index = _build_correlated_parlays_index(slip_rows)
+
     for slip in slip_rows:
         # Legs split (Pitfall 4)
         slip["legs_list"] = [
@@ -420,9 +436,10 @@ def get_all_slips() -> dict[str, Any]:
             if leg.strip()
         ]
 
-        # "Why paired" — Tier 1: look up Correlated Parlays in per-sport workbook
-        # Tier 1 is rarely populated (Pitfall 7); fall through to Tier 2 on no-match.
-        why = _lookup_correlated_parlays(slip)
+        # "Why paired" — Tier 1: stored Correlated Parlays reasoning (from the
+        # pre-built index). Tier 1 is rarely populated (Pitfall 7); fall through
+        # to the Tier-2 derived rationale on no-match.
+        why = parlay_index.get(str(slip.get("Slip ID") or ""), "")
         if not why:
             why = _derive_why_paired(str(slip.get("Slip ID") or ""))
         slip["why_paired"] = why
@@ -439,38 +456,49 @@ def get_all_slips() -> dict[str, Any]:
     }
 
 
-def _lookup_correlated_parlays(slip: dict[str, Any]) -> str:
-    """Tier-1 why-paired lookup: read Correlated Parlays sheet for the slip's date.
+def _build_correlated_parlays_index(slips: list[dict[str, Any]]) -> dict[str, str]:
+    """Build a {Slip ID: "Reasoning — Correlation Group"} index for Tier-1
+    why-paired lookups, reading each per-sport workbook at most once per distinct
+    slip date (CR-01: avoids O(N slips) blocking workbook I/O).
 
-    Extracts the date from the Slip ID prefix (format "YYYY-MM-DD:category:hash"),
-    then reads the Correlated Parlays sheet from both per-sport workbooks for that
-    date, looking for a matching Slip ID row.
-
-    Returns a formatted "Reasoning — Correlation Group" string if a match is found,
-    or an empty string to signal fall-through to Tier 2. Never raises (Pitfall 7).
+    Slip IDs have the form "YYYY-MM-DD:category:hash". This collects the distinct
+    leading dates across all slips, reads the Correlated Parlays sheet from both
+    per-sport workbooks for each date exactly once, and indexes every row with a
+    non-empty Reasoning by its Slip ID. The returned string format matches the
+    previous per-slip lookup. Never raises (Pitfall 7).
     """
+    index: dict[str, str] = {}
     try:
-        slip_id = str(slip.get("Slip ID") or "")
-        if not slip_id:
-            return ""
-        date_part = slip_id.split(":")[0]
-        if not date_part or len(date_part) != 10:
-            return ""
+        dates: set[str] = set()
+        for slip in slips:
+            date_part = str(slip.get("Slip ID") or "").split(":")[0]
+            if date_part and len(date_part) == 10:
+                dates.add(date_part)
 
-        for sport_dir, sport_prefix in ((NBA_DIR, "nba"), (MLB_DIR, "mlb")):
-            wb_path = sport_dir / f"{sport_prefix}_{date_part}.xlsx"
-            parlay_rows = read_sheet_rows(wb_path, "Correlated Parlays")
-            if not parlay_rows:
-                continue
-            for pr in parlay_rows:
-                if pr.get("Slip ID") == slip_id:
+        for date_part in dates:
+            for sport_dir, sport_prefix in ((NBA_DIR, "nba"), (MLB_DIR, "mlb")):
+                wb_path = sport_dir / f"{sport_prefix}_{date_part}.xlsx"
+                # Read-only fan-out over many historical workbooks: skip the 1s
+                # settle sleep (CR-01). A mid-write read of today's workbook just
+                # returns None here and falls through to the Tier-2 rationale.
+                parlay_rows = read_sheet_rows(
+                    wb_path, "Correlated Parlays", delay=0.0
+                )
+                if not parlay_rows:
+                    continue
+                for pr in parlay_rows:
+                    pr_id = str(pr.get("Slip ID") or "")
+                    if not pr_id or pr_id in index:
+                        continue
                     reasoning = str(pr.get("Reasoning") or "").strip()
                     corr_group = str(pr.get("Correlation Group") or "").strip()
                     if reasoning:
-                        return f"{reasoning} — {corr_group}" if corr_group else reasoning
+                        index[pr_id] = (
+                            f"{reasoning} — {corr_group}" if corr_group else reasoning
+                        )
     except Exception:
         pass
-    return ""
+    return index
 
 
 # ---------------------------------------------------------------------------
