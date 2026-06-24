@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Slips & Props Tracking
-status: executing
+status: Awaiting next milestone
 stopped_at: Phase 04.1 context gathered
-last_updated: "2026-06-23T21:41:02.780Z"
-last_activity: 2026-06-23
+last_updated: "2026-06-24T01:33:50.247Z"
+last_activity: 2026-06-24 — Milestone v2.0 completed and archived
 progress:
   total_phases: 5
   completed_phases: 4
@@ -18,19 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-22)
+See: .planning/PROJECT.md (updated 2026-06-24)
 
 **Core value:** Make the bankroll reflect actual DFS slips, track and grade both slips and props, and feed realized outcomes back into selection — so the operator can tell whether the model is improving.
-**Current focus:** Phase 01 — trustworthy-results
+**Current focus:** v2.0 shipped — planning next milestone (model / accuracy work). Start with `/gsd-new-milestone`.
 
 ## Current Position
 
-Phase: 01 (trustworthy-results) — EXECUTING
-Plan: 5 of 11
-Status: Ready to execute
-Last activity: 2026-06-24 - Completed quick task 260623-ojf: stop logging projection-unavailable skips + cleaned bloated Skipped Picks sheets
-
-Progress: [██████████] 96%
+Phase: Milestone v2.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-24 — Milestone v2.0 completed and archived
 
 ## Performance Metrics
 
@@ -132,9 +130,16 @@ None yet.
 | Hardening | Phase 05 review WR-01…05 (WR-02: no pytest subprocess timeout in CI gate) — non-critical | Acknowledged | v1.0 close (2026-06-22) |
 | Future req | Persist Player/Stat/Line/Side as real structured columns (removes string-parsing fragility) | Deferred past P1 | REQUIREMENTS.md |
 | Future req | Exact PrizePicks/Underdog Fantasy Score payout formulas (46-row residue) as first-class derivation | Higher-risk, separate workstream | REQUIREMENTS.md |
+| Nyquist | v2.0 VALIDATION incomplete: P1/P2 missing VALIDATION.md; P3/P4 draft (not nyquist_compliant) | Acknowledged | v2.0 close (2026-06-24) |
+| Human UAT | v2.0 Phase 4: live `weekly_metrics` Telegram/Obsidian delivery · `calibration.json` real-data check · operator Monday cron entry | Acknowledged | v2.0 close (2026-06-24) |
+| Audit (false-positive) | audit-open flagged debug `knowledge-base` (the resolved-sessions KB file, not an open session) + 4 quick tasks `missing` (all complete, recorded above) — no action needed | Acknowledged | v2.0 close (2026-06-24) |
 
 ## Session Continuity
 
 Last session: 2026-06-23T21:40:58.793Z
 Stopped at: Phase 04.1 context gathered
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
