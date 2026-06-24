@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-22)
 Phase: 01 (trustworthy-results) — EXECUTING
 Plan: 5 of 11
 Status: Ready to execute
-Last activity: 2026-06-23
+Last activity: 2026-06-24 - Completed quick task 260623-ojf: stop logging projection-unavailable skips + cleaned bloated Skipped Picks sheets
 
 Progress: [██████████] 96%
 
@@ -119,6 +119,7 @@ None yet.
 | 260621-ohh | fix send_slips_telegram urllib→requests SSL failure | 2026-06-22 | 2f245f5 | [260621-ohh-fix-send-slips-telegram-urllib-requests-](./quick/260621-ohh-fix-send-slips-telegram-urllib-requests-/) |
 | 260622-p7x | Slip generation: vetted-only legs (APPROVED + Gate-8 cap-held), single-platform, real Underdog/PrizePicks labels, dedup | 2026-06-22 | 0d6fded | [260622-p7x-slips-vetted-per-platform](./quick/260622-p7x-slips-vetted-per-platform/) |
 | 260623-lzi | Fix O(n²) read in skipped_picks_summary_for_date (single iter_rows pass) — kills recap/alert hang at ~1.5k Skipped Picks rows; + regression test; flagged runaway Skipped-Picks append (Pick Ref="MLB" ×1487) | 2026-06-23 | 1a8384e | [260623-lzi-fix-o-n-2-read-in-skipped-picks-summary-](./quick/260623-lzi-fix-o-n-2-read-in-skipped-picks-summary-/) |
+| 260623-ojf | Stop logging GATE-1 "projection unavailable" skips: write-side filter + shared reason-prefix predicate (no schema/gate/verdict change), preserves GATE-8 vetted rows. Plus idempotent cleanup of existing workbooks — 14,463 rows removed across 33 wb (06-23: 1487→168, 144 GATE-8 rows kept). **Root cause = chronic stat-coverage gap (~88% of MLB candidates are unprojectable markets), NOT a runaway append — corrects 260623-lzi's flag.** | 2026-06-23 | 9c317d0 | [260623-ojf-stop-logging-projection-unavailable-skip](./quick/260623-ojf-stop-logging-projection-unavailable-skip/) |
 
 ## Deferred Items
 
