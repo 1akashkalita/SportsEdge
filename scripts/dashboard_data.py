@@ -10,6 +10,7 @@ Exports:
     today_str          — naive local date string matching the runner's today_str()
     write_in_progress  — True iff a live+fresh cooperative lock exists
     last_updated_hhmm  — "HH:MM" from run_log.jsonl last line, None if absent
+    last_run_record    — latest run_log.jsonl record for a task, None if absent
     get_today_board    — approved + skipped picks for today (VIEW-01)
     get_all_slips      — all slips from master_pnl.xlsx (VIEW-02)
     get_history_data   — W/L + tier breakdown + chart series (VIEW-03)
@@ -260,6 +261,51 @@ def last_updated_hhmm() -> str | None:
         return dt_local.strftime("%H:%M")
     except (json.JSONDecodeError, KeyError, ValueError, TypeError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# last_run_record — latest run_log.jsonl record for a task (D-04 status poll)
+# ---------------------------------------------------------------------------
+
+def last_run_record(task: str) -> dict[str, Any] | None:
+    """Return the most recent run_log.jsonl record for the given task name.
+
+    Reads RUN_LOG_JSONL in reverse line order and returns the first record
+    whose "task" field matches the provided task string. Returns None if the
+    log file is absent, the task has no entries, or a parse error occurs on
+    all lines.
+
+    Record schema (from sports_system_runner trailing_failure_streak idiom):
+        {"task", "status", "duration_s", "error", "exit_code", "sport", "timestamp"}
+
+    Status values: "ok" | "error" | "timeout" | "partial"
+
+    This function is read-only — it never writes, opens in write mode, or calls
+    any save function. The read-only contract of dashboard_data.py is preserved.
+
+    Args:
+        task: Task name string, e.g. "nba_daily_picks".
+
+    Returns:
+        dict with run record fields, or None on no match / file absent.
+    """
+    try:
+        text = RUN_LOG_JSONL.read_text()
+    except (FileNotFoundError, OSError):
+        return None
+
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(rec, dict) and rec.get("task") == task:
+            return rec
+
+    return None
 
 
 # ---------------------------------------------------------------------------
