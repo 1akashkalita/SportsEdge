@@ -417,6 +417,56 @@ class TestSlipsAccessor(unittest.TestCase):
             f"Expected fallback 'Independent legs' string in why_paired, got {unknown['why_paired']!r}",
         )
 
+    def test_correlated_parlays_read_once_per_date(self) -> None:
+        """REGRESSION (CR-01): the Tier-1 Correlated Parlays lookup must read each
+        per-sport workbook at most once per DISTINCT slip date, never once per slip.
+
+        The original implementation called _lookup_correlated_parlays() inside the
+        per-slip loop, re-opening BOTH per-sport workbooks for every slip. Each open
+        does a 1s wait_for_stable_file sleep, so an 88-slip workbook took ~184s.
+        This test pins the structural fix: with N slips across D distinct dates, the
+        number of 'Correlated Parlays' reads must stay <= 2 (sports) * D, independent
+        of N. It does not measure time — it counts workbook opens, which is the exact
+        property that made the route unusable at scale.
+        """
+        # 12 slips spread across only 2 distinct dates.
+        slip_rows: list[dict[str, Any]] = []
+        for i in range(6):
+            slip_rows.append({
+                "Date": "2026-06-10",
+                "Slip ID": f"2026-06-10:highest_ev:a{i:03d}aaaa",
+                "Legs": "A; B", "Slip Result": "GRADED",
+            })
+        for i in range(6):
+            slip_rows.append({
+                "Date": "2026-06-11",
+                "Slip ID": f"2026-06-11:highest_ev:b{i:03d}bbbb",
+                "Legs": "C; D", "Slip Result": "GRADED",
+            })
+
+        calls = {"Correlated Parlays": 0}
+
+        def fake_read_sheet_rows(xlsx: Any, sheet: str) -> Any:
+            if sheet == "Slip History":
+                return slip_rows
+            if sheet == "Correlated Parlays":
+                calls["Correlated Parlays"] += 1
+                return []  # no Tier-1 match -> falls through to Tier-2
+            return []
+
+        with patch.object(dashboard_data, "read_sheet_rows", side_effect=fake_read_sheet_rows):
+            result = dashboard_data.get_all_slips()
+
+        self.assertEqual(len(result["slips"]), 12)
+        # 2 distinct dates * 2 sports = 4 max. The O(N) bug would produce 12 * 2 = 24.
+        self.assertLessEqual(
+            calls["Correlated Parlays"],
+            4,
+            f"CR-01 regression: 'Correlated Parlays' read {calls['Correlated Parlays']} times "
+            f"for 12 slips across 2 dates; expected <= 4 (once per sport per distinct date). "
+            f"A per-slip lookup has been reintroduced.",
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestHistoryAccessor — unit tests for get_history_data() (VIEW-03)
