@@ -77,7 +77,10 @@ Design: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md` (appro
   3. Each slip shows a "why these legs are paired" insight — the stored Correlated Parlays `Reasoning`/`Correlation Group` where present, and a derived rationale (same game/team, combined prob/EV) for general slips (VIEW-02).
   4. The History page shows win/loss overall and per sport, with a per-confidence-tier breakdown (VIEW-03).
   5. The History page renders a bankroll/ROI time-series chart (Chart.js via CDN) from the persisted bankroll/master-P&L data (VIEW-03).
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 02-01-PLAN.md — Wave-0 test scaffold + three read-only view accessors (get_today_board / get_all_slips / get_history_data) in dashboard_data.py (VIEW-01/02/03)
+  - [ ] 02-02-PLAN.md — Three GET routes + _freshness_context in dashboard.py; Today master table (index.html) + Slips expandable rows (slips.html) (VIEW-01, VIEW-02)
+  - [ ] 02-03-PLAN.md — History page (history.html): W/L overall+per-sport, per-tier breakdown, bankroll/ROI Chart.js chart (VIEW-03)
 **UI hint**: yes
 
 ### Phase 3: Safe Actions
@@ -101,7 +104,7 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Foundation & Data Layer | v3.0 | 3/3 | Complete   | 2026-06-24 |
-| 2. Read Views | v3.0 | 0/TBD | Not started | - |
+| 2. Read Views | v3.0 | 0/3 | Not started | - |
 | 3. Safe Actions | v3.0 | 0/TBD | Not started | - |
 
 ## Next Milestone
