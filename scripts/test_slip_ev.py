@@ -348,8 +348,9 @@ class LegExpansionTests(unittest.TestCase):
     def test_flag_on_no_extended_when_not_justified(self):
         cal = {"fingerprints": {"MLB": {"n_with_mop": 37}},
                "audit": [{"reason": "computed", "raw_ratio": 1.2569, "sport": "MLB"}]}
-        # Marginal probs: shrunk EV of a 4-leg won't beat best 2/3-leg by margin.
-        projs = self._projections(6, p=0.60)
+        # Marginal probs (p=0.55): every 4/5/6-leg shrunk EV stays below the best
+        # 2/3-leg EV * (1 + margin), so no extended slip is justified.
+        projs = self._projections(6, p=0.55)
         with unittest.mock.patch.dict(os.environ, {"ENABLE_EV_SLIP_TYPE": "1"}), \
              unittest.mock.patch.object(build_slips, "_load_calibration", return_value=cal):
             payload = build_slips.build_slips(projs, {"pairs": []}, "2026-06-24")

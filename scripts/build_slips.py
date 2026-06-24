@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import analyze_prop_correlation as corr
-from slip_payouts import payout_multiplier
+from slip_payouts import load_payout_config, payout_multiplier
 from stake_sizing import apply_confidence_stakes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -653,6 +653,47 @@ def choose_slip_type(
     return "power" if pick_power else "flex"
 
 
+def _best_shrunk_ev(
+    legs: list[dict[str, Any]],
+    platform: Any,
+    calibration: dict[str, Any],
+) -> float | None:
+    """Best calibration-shrunk EV (max of power-EV and flex-EV) for a leg set.
+
+    Returns None when the platform lacks a payout table for that leg count or a
+    leg is missing a probability — i.e. the EV is unknown and the set must not be
+    used to justify expansion. Power-EV is only counted when the chooser would
+    actually allow power for the set (so an untrusted/correlated set cannot use
+    the higher power multiplier to look good); flex-EV always counts when a flex
+    table exists.
+    """
+    platform_name = platform if platform is not None else "PrizePicks"
+    leg_count = len(legs)
+    full_win_mult = payout_multiplier(platform_name, "power", leg_count, leg_count)
+    flex_table = _flex_win_table(platform_name, leg_count)
+    if full_win_mult is None and flex_table is None:
+        return None
+
+    shrunk: list[float] = []
+    for leg in legs:
+        prob = _to_float(leg.get("over_probability"))
+        if prob is None:
+            return None
+        _trustworthy, ratio = _leg_trustworthy(leg, calibration)
+        shrunk.append(shrink_probability(prob, ratio))
+
+    details = combined_probability_details(legs, {}, False)
+    recommended = choose_slip_type(legs, platform_name, leg_count, details, calibration=calibration)
+    candidates: list[float] = []
+    if flex_table is not None:
+        candidates.append(ev_flex(shrunk, flex_table))
+    if full_win_mult is not None and recommended == "power":
+        candidates.append(ev_power(shrunk, full_win_mult))
+    if not candidates:
+        return None
+    return max(candidates)
+
+
 def _ev_annotations(
     legs: list[dict[str, Any]],
     platform: Any,
@@ -793,7 +834,13 @@ def first_valid_combo(candidates: list[dict[str, Any]], n: int, pair_map: dict[f
     return []
 
 
-SLIP_CATEGORIES = ["safest_2_leg", "safest_3_leg", "highest_ev", "correlated_upside", "diversified", "kat_based"]
+SLIP_CATEGORIES = ["safest_2_leg", "safest_3_leg", "highest_ev", "correlated_upside", "diversified", "kat_based", "ev_extended"]
+
+# Higher-leg expansion (behind ENABLE_EV_SLIP_TYPE) considers only PrizePicks and
+# caps the candidate pool before itertools.combinations to bound cost under the
+# 120s build_slips subprocess timeout.
+EV_EXTENDED_PLATFORMS = {"PrizePicks"}
+EV_EXTENDED_POOL_CAP = 12
 
 
 def platform_groups(eligible: list[dict[str, Any]]) -> list[tuple[Any, list[dict[str, Any]]]]:
@@ -813,6 +860,84 @@ def platform_groups(eligible: list[dict[str, Any]]) -> list[tuple[Any, list[dict
     for prop in eligible:
         groups[prop.get("platform")].append(prop)
     return [(key, groups[key]) for key in order]
+
+
+def _build_ev_extended_slips(
+    eligible: list[dict[str, Any]],
+    pair_map: dict[frozenset[str], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """EV-justified higher-leg (n=4..6) PrizePicks slips, behind ENABLE_EV_SLIP_TYPE.
+
+    Emits a higher-leg slip only when its best calibration-shrunk EV exceeds the
+    best 2/3-leg shrunk EV by EV_MARGIN. PrizePicks only; hard-capped at the max
+    leg count present in the PrizePicks payout table (6). The candidate pool is
+    capped by score before itertools.combinations to bound cost.
+    """
+    if not _ev_slip_type_enabled():
+        return []
+    # Single-platform group by construction; expansion is PrizePicks only.
+    platform = slip_platform(eligible)
+    payout_platform = platform if platform is not None else "PrizePicks"
+    if payout_platform not in EV_EXTENDED_PLATFORMS:
+        return []
+
+    # Hard cap = max leg count present in the platform's payout table.
+    power_cfg = (load_payout_config().get(payout_platform, {}) or {}).get("power", {}) or {}
+    flex_cfg = (load_payout_config().get(payout_platform, {}) or {}).get("flex", {}) or {}
+    leg_keys = [int(k) for k in list(power_cfg.keys()) + list(flex_cfg.keys()) if str(k).isdigit()]
+    if not leg_keys:
+        return []
+    max_legs = min(6, max(leg_keys))
+    if max_legs < 4:
+        return []
+
+    calibration = _load_calibration()
+
+    # Cap the candidate pool by EV-score to bound the combinatorial cost.
+    pool = sorted(eligible, key=score_ev, reverse=True)[:EV_EXTENDED_POOL_CAP]
+
+    # Baseline: best valid 2- and 3-leg shrunk EV from the same pool.
+    baseline_best: float | None = None
+    for n in (2, 3):
+        legs = first_valid_combo(pool, n, pair_map, conservative=True)
+        if not legs:
+            continue
+        ev = _best_shrunk_ev(legs, payout_platform, calibration)
+        if ev is not None and (baseline_best is None or ev > baseline_best):
+            baseline_best = ev
+    if baseline_best is None:
+        return []
+
+    import itertools
+
+    margin = _ev_margin()
+    threshold = baseline_best * (1.0 + margin)
+    slips: list[dict[str, Any]] = []
+    for n in range(4, max_legs + 1):
+        if len(pool) < n:
+            break
+        best_legs: list[dict[str, Any]] | None = None
+        best_ev: float | None = None
+        for combo in itertools.combinations(pool, n):
+            legs = list(combo)
+            if has_bad_pair(legs, pair_map, conservative=True):
+                continue
+            ev = _best_shrunk_ev(legs, payout_platform, calibration)
+            if ev is None:
+                continue
+            if best_ev is None or ev > best_ev:
+                best_ev = ev
+                best_legs = legs
+        if best_legs is not None and best_ev is not None and best_ev > threshold:
+            slips.append(make_slip(
+                "ev_extended",
+                f"EV-justified {n}-leg",
+                best_legs,
+                pair_map,
+                False,
+                f"EV-justified {n}-leg: calibration-shrunk EV {best_ev:.3f} exceeds best 2/3-leg EV {baseline_best:.3f} by margin {margin:.2f}.",
+            ))
+    return slips
 
 
 def _build_category_slips(eligible: list[dict[str, Any]], correlation_payload: dict[str, Any], pair_map: dict[frozenset[str], dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -871,6 +996,10 @@ def _build_category_slips(eligible: list[dict[str, Any]], correlation_payload: d
         noncorr_ev = [p for p in by_ev if p is not anchor and p.get("player_name") != anchor.get("player_name") and pair_label(pair_map, anchor, p) not in {"strong positive correlation", "moderate positive correlation", "negative/risky correlation"}]
         if noncorr_ev:
             slips["kat_based"].append(make_slip("kat_based", "KAT anchor + highest-EV non-correlated leg", [anchor, noncorr_ev[0]], pair_map, False, "KAT anchor paired with highest-EV non-correlated leg."))
+
+    # EV-justified higher-leg (n=4..6) PrizePicks slips (behind ENABLE_EV_SLIP_TYPE;
+    # produces nothing when the flag is OFF -> identical to today).
+    slips["ev_extended"].extend(_build_ev_extended_slips(eligible, pair_map))
 
     return slips
 
