@@ -65,6 +65,16 @@
 
 <!-- Page content -->
 <main>
+  {# Flash message banner — renders action outcomes (D-06); message is autoescaped (T-03-09) #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div style="padding:0.4rem 1rem; background:{% if category == 'error' %}#7d1a1a{% elif category == 'success' %}#1a4d2e{% else %}#4d3a1a{% endif %}; color:#fff; margin-bottom:0.5rem; border-radius:3px;">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
   {% block content %}{% endblock %}
 </main>
 

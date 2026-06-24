@@ -9,6 +9,22 @@
 <p style="color:#e67e22;">Data is updating&hellip; Showing last-known-good data.</p>
 {% endif %}
 
+{# Refresh widget — curated-task dropdown + confirm (D-01, D-05, ACTION-01) #}
+<details style="margin-bottom:1rem; border:1px solid #333; border-radius:4px; padding:0.5rem 1rem;">
+  <summary style="cursor:pointer; font-size:0.9rem; font-weight:bold;">Run a task&hellip;</summary>
+  <form method="post" action="/action/refresh" onsubmit="return confirm('Run the selected task in the background?')" style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+    <select name="task" id="refresh-task-select" style="font-size:0.85rem;" onchange="dashboardResetStatusPoll()">
+      <option value="nba_daily_picks">nba_daily_picks</option>
+      <option value="mlb_daily_picks">mlb_daily_picks</option>
+      <option value="check_results">check_results</option>
+      <option value="nba_prop_monitor">nba_prop_monitor</option>
+      <option value="mlb_prop_monitor">mlb_prop_monitor</option>
+    </select>
+    <button type="submit" style="font-size:0.85rem; padding:0.25rem 0.75rem;">Run</button>
+    <span id="refresh-status-badge" style="font-size:0.8rem; color:#aaa;"></span>
+  </form>
+</details>
+
 {% if data.slips %}
 {# Date filter — server-rendered unique dates from accessor output #}
 {% set unique_dates = data.slips | map(attribute='Date') | unique | list %}
@@ -63,6 +79,55 @@
                 </span>
               </p>
             {% endif %}
+
+            {# Persisted state display — Placed / Placed At / Operator Note (ACTION-02/03) #}
+            <div style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid #333; display:flex; flex-wrap:wrap; gap:0.75rem; align-items:flex-start;">
+              <div>
+                <span style="font-size:0.8rem; color:#aaa;">Placed:</span>
+                <span style="font-size:0.85rem;">
+                  {% if slip['Placed'] is not none and slip['Placed'] %}
+                    <strong style="color:#2ecc71;">Yes</strong>
+                    {% if slip['Placed At'] is not none %}
+                      <span style="color:#aaa; font-size:0.78rem;"> at {{ slip['Placed At'] }}</span>
+                    {% endif %}
+                  {% else %}
+                    <span style="color:#888;">No</span>
+                  {% endif %}
+                </span>
+              </div>
+              {% if slip['Operator Note'] is not none %}
+              <div>
+                <span style="font-size:0.8rem; color:#aaa;">Note:</span>
+                <span style="font-size:0.85rem;">{{ slip['Operator Note'] }}</span>
+              </div>
+              {% endif %}
+            </div>
+
+            {# Mark Placed toggle form — inline, no confirm (D-05, ACTION-02) #}
+            <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+              <form method="post" action="/action/mark-placed" style="display:inline;">
+                <input type="hidden" name="date" value="{{ slip.Date }}">
+                <input type="hidden" name="slip_id" value="{{ slip['Slip ID'] }}">
+                {# Toggle: if currently placed send placed=0, else send placed=1 #}
+                {% if slip['Placed'] is not none and slip['Placed'] %}
+                  <input type="hidden" name="placed" value="0">
+                  <button type="submit" style="font-size:0.78rem; padding:0.2rem 0.6rem; background:#4d1a1a; color:#fff; border:none; border-radius:3px; cursor:pointer;">Unplace</button>
+                {% else %}
+                  <input type="hidden" name="placed" value="1">
+                  <button type="submit" style="font-size:0.78rem; padding:0.2rem 0.6rem; background:#1a3a1a; color:#fff; border:none; border-radius:3px; cursor:pointer;">Mark Placed</button>
+                {% endif %}
+              </form>
+
+              {# Add Note form — inline, no confirm (D-05, ACTION-03) #}
+              <form method="post" action="/action/add-note" style="display:inline; display:flex; gap:0.35rem; align-items:center;">
+                <input type="hidden" name="date" value="{{ slip.Date }}">
+                <input type="hidden" name="slip_id" value="{{ slip['Slip ID'] }}">
+                <input type="text" name="note" placeholder="Add note…"
+                       value="{{ slip['Operator Note'] if slip['Operator Note'] is not none else '' }}"
+                       style="font-size:0.78rem; padding:0.2rem 0.4rem; width:14rem; background:#222; color:#ddd; border:1px solid #444; border-radius:3px;">
+                <button type="submit" style="font-size:0.78rem; padding:0.2rem 0.6rem; background:#1a2a4d; color:#fff; border:none; border-radius:3px; cursor:pointer;">Save Note</button>
+              </form>
+            </div>
           </div>
         </td>
       </tr>
@@ -103,5 +168,59 @@ window.filterSlips = function () {
     h.style.display = (!filterDate || h.dataset.date === filterDate) ? '' : 'none';
   });
 };
+
+// Refresh status poll — activated when a refresh is triggered (D-04, Open Question 3).
+// Polls /api/status?task=<selected> every 5s; updates the in-page badge once locked=false.
+(function () {
+  var pollTimer = null;
+  var pollTask = null;
+
+  // Called by the task dropdown onchange to reset the badge when the operator switches tasks.
+  window.dashboardResetStatusPoll = function () {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    var badge = document.getElementById('refresh-status-badge');
+    if (badge) { badge.textContent = ''; }
+  };
+
+  // Activate polling after the page loads if a refresh was just triggered.
+  // We detect this by checking whether the flash banner contains a "Started task" message.
+  var flashBanners = document.querySelectorAll('main > div');
+  var justStarted = false;
+  flashBanners.forEach(function (el) {
+    if (el.textContent.indexOf('Started task') !== -1) { justStarted = true; }
+  });
+
+  if (justStarted) {
+    var sel = document.getElementById('refresh-task-select');
+    pollTask = sel ? sel.value : null;
+    if (pollTask) {
+      var badge = document.getElementById('refresh-status-badge');
+      if (badge) { badge.textContent = 'updating…'; }
+      var spawnTime = Date.now();
+      pollTimer = setInterval(function () {
+        fetch('/api/status?task=' + encodeURIComponent(pollTask))
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!badge) { return; }
+            if (!data.locked) {
+              var lr = data.last_run;
+              if (lr && lr.task === pollTask && lr.timestamp) {
+                var tsMs = new Date(lr.timestamp).getTime();
+                if (tsMs > spawnTime - 5000) {
+                  badge.textContent = '✓ done (' + (data.last_updated || '') + ')';
+                  clearInterval(pollTimer); pollTimer = null;
+                  return;
+                }
+              }
+              badge.textContent = 'idle';
+            } else {
+              badge.textContent = 'running…';
+            }
+          })
+          .catch(function () { /* ignore fetch errors — badge stays as-is */ });
+      }, 5000);
+    }
+  }
+}());
 </script>
 {% endblock %}
