@@ -181,18 +181,24 @@ can use live picks too.
 
 ---
 
-## 8. Broader roadmap — this is milestone 1 of 3
+## 8. Broader roadmap — this is milestone 2 of 4
 
-During brainstorming the operator added two more capabilities. They are sequenced *after* this one because
-both are EV/value judgments built on `model_over_probability` — only as trustworthy as the model's calibration,
-which this milestone fixes. Bolting "recommend when value appears" onto a miscalibrated model surfaces *false*
-value. The backtest harness built here is also what validates a future live model. Each milestone gets its own
-GSD discuss → plan cycle; M2/M3 are captured here (not yet designed) so the investigation isn't lost.
+During brainstorming the operator added three more capabilities. A **localhost dashboard** (see
+`2026-06-23-localhost-dashboard-design.md`) was prioritized *ahead* of this milestone (M1) — it is low-risk,
+independent, and immediately useful. The two value-detection capabilities below are sequenced *after* this one
+because both are EV/value judgments built on `model_over_probability` — only as trustworthy as the model's
+calibration, which this milestone fixes. Bolting "recommend when value appears" onto a miscalibrated model
+surfaces *false* value. The backtest harness built here is also what validates a future live model. Each
+milestone gets its own GSD discuss → plan cycle; M3/M4 are captured here (not yet designed) so the
+investigation isn't lost.
 
-**M1 — Model Accuracy & Calibration (this doc).** Offline backtest harness → tune → ship gated → live
+**M1 — Localhost dashboard (separate doc).** Viewer + safe actions over existing data; grows tabs as later
+milestones land.
+
+**M2 — Model Accuracy & Calibration (this doc).** Offline backtest harness → tune → ship gated → live
 probability-logging fix.
 
-**M2 — Line-change re-evaluation + late-breaking pregame value (near-term).**
+**M3 — Line-change re-evaluation + late-breaking pregame value (near-term).**
 - *~80% already built, just not activated.* `prop_monitor` (`sports_system_runner.py:3789–3960`) already runs
   every 45 min during games and already detects favorable/unfavorable line moves (lines 3835–3857) — but it
   only *logs* them. The work: on a favorable move → re-run `evaluate_no_bet_gates` + the (pure, reusable) EV
@@ -204,21 +210,21 @@ probability-logging fix.
   run) — add a Line History sheet / timestamped snapshots; this also enriches the backtest.
 - *Calibration-independent early subset:* a *strictly-better* line on an already-vetted pick (e.g. wanted Over
   25.5, now 23.5) is better regardless of calibration — could ship before full tuning. Determining a
-  *previously-skipped* prop is *now* +EV does need M1's calibration.
+  *previously-skipped* prop is *now* +EV does need this milestone's calibration.
 
-**M3 — True in-game / live picks (later, own milestone).**
+**M4 — True in-game / live picks (later, own milestone).**
 - The system deliberately refuses live props today: Gate 12 blocks them (`line_timing.py:230–241`), and its own
   error says they "require a separate live projection model; live model unavailable." Live data already flows
   in (PrizePicks fetched with `in_game=true`) but is parked in the diagnostic-only Live Watchlist.
 - The work: a **new in-game projection model** (remaining time, current pace, score state, foul trouble) — the
   pregame model can't price these; unblock Gate 12 (`enable_live_prop_betting`) behind that real model;
   possibly a tighter monitoring cadence (current floor is 5-min `game_completion_monitor`; sub-5-min needs new
-  architecture). Validated against M1's backtest harness. Highest value-density, biggest effort, real-money
-  policy change.
+  architecture). Validated against this milestone's backtest harness. Highest value-density, biggest effort,
+  real-money policy change.
 
 ## 9. Process note
 
 This repo runs on GSD (`.planning/`; STATE.md: "start the next milestone with `/gsd-new-milestone`"), and
 CLAUDE.md mandates the GSD workflow. This design doc is the input artifact; the milestone will be planned and
-executed through GSD (`/gsd-new-milestone`), not the default superpowers `writing-plans` hand-off. M2 and M3
-will each get their own discuss → plan cycle when reached.
+executed through GSD (`/gsd-new-milestone`), not the default superpowers `writing-plans` hand-off. The
+dashboard (M1) is planned first; M3 and M4 each get their own discuss → plan cycle when reached.
