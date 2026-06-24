@@ -30,6 +30,7 @@ HOST: str = "127.0.0.1"
 # Flask app — templates/ resolved relative to scripts/ when run from scripts/
 # ---------------------------------------------------------------------------
 app: Flask = Flask(__name__)
+app.secret_key = os.environ.get("DASHBOARD_SECRET_KEY") or os.urandom(16)
 
 
 # ---------------------------------------------------------------------------
