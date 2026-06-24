@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}History — Hermes Sports Dashboard{% endblock %}
+
+{% block content %}
+<h2>History</h2>
+
+{% if data.locked %}
+<p style="color:#e67e22;">Data is updating&hellip; Showing last-known-good data.</p>
+{% endif %}
+
+{# ── Overall + Per-Sport W/L ─────────────────────────────────────────────── #}
+<section>
+  <h3>Overall Record</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Scope</th>
+        <th>W</th>
+        <th>L</th>
+        <th>Hit %</th>
+        <th>ROI %</th>
+        <th>n</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Overall</strong></td>
+        <td>{{ data.overall.W }}</td>
+        <td>{{ data.overall.L }}</td>
+        <td>{{ "%.1f%%"|format(data.overall.hit_pct * 100) if data.overall.hit_pct is not none else "—" }}</td>
+        <td>{{ "%.1f%%"|format(data.overall.roi_pct * 100) if data.overall.roi_pct is not none else "—" }}</td>
+        <td>{{ data.overall.n }}</td>
+      </tr>
+      {% for sport in ['NBA', 'MLB'] %}
+        {% set s = data.by_sport[sport] %}
+        <tr>
+          <td>{{ sport }}</td>
+          <td>{{ s.W }}</td>
+          <td>{{ s.L }}</td>
+          <td>{{ "%.1f%%"|format(s.hit_pct * 100) if s.hit_pct is not none else "—" }}</td>
+          <td>{{ "%.1f%%"|format(s.roi_pct * 100) if s.roi_pct is not none else "—" }}</td>
+          <td>{{ s.n }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{# ── Per-Confidence-Tier Breakdown (D-09) ────────────────────────────────── #}
+<section style="margin-top:1.5rem;">
+  <h3>Confidence Tier Breakdown</h3>
+  <p style="font-size:0.8rem; color:#aaa;">UNKNOWN / pre-v2.0 = picks graded before confidence tiers were recorded.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Tier</th>
+        <th>W-L</th>
+        <th>Hit %</th>
+        <th>ROI %</th>
+        <th>n</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tier in ['A', 'B', 'C', 'UNKNOWN'] %}
+        {% set t = data.by_tier[tier] %}
+        <tr>
+          <td>
+            {% if tier == 'UNKNOWN' %}
+              UNKNOWN / pre-v2.0
+            {% else %}
+              {{ tier }}
+            {% endif %}
+          </td>
+          <td>{{ t.W }}-{{ t.L }}</td>
+          <td>{{ "%.1f%%"|format(t.hit_pct * 100) if t.hit_pct is not none else "—" }}</td>
+          <td>{{ "%.1f%%"|format(t.roi_pct * 100) if t.roi_pct is not none else "—" }}</td>
+          <td>{{ t.n }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{# ── Bankroll Over Time (D-08) ───────────────────────────────────────────── #}
+<section style="margin-top:1.5rem;">
+  <h3>Bankroll Over Time</h3>
+  <div style="display:flex; gap:0.5rem; margin-bottom:0.75rem;">
+    <button id="toggle-daily" style="font-size:0.85rem;">Daily</button>
+    <button id="toggle-weekly" style="font-size:0.85rem;">Weekly</button>
+  </div>
+  {% if data.chart_daily.labels %}
+    <canvas id="bankroll-chart" style="max-height:300px;"></canvas>
+  {% else %}
+    <p style="color:#aaa;">No chart data yet.</p>
+  {% endif %}
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+{# Chart.js CDN — pinned to v4.5.1 with verified SHA-384 SRI hash (RESEARCH Pitfall 11 / Pattern 2) #}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"
+        integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
+        crossorigin="anonymous"></script>
+<script>
+  // Server serializes series via tojson — handles None→null and special chars (Pitfall 8)
+  const dailyLabels    = {{ data.chart_daily.labels    | tojson }};
+  const dailyBankroll  = {{ data.chart_daily.bankroll  | tojson }};
+  const weeklyLabels   = {{ data.chart_weekly.labels   | tojson }};
+  const weeklyBankroll = {{ data.chart_weekly.bankroll | tojson }};
+
+  {% if data.chart_daily.labels %}
+  const ctx = document.getElementById('bankroll-chart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dailyLabels,
+      datasets: [{
+        label: 'Bankroll',
+        data: dailyBankroll,
+        tension: 0.2,
+        borderColor: '#3498db',
+        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      spanGaps: false,
+      plugins: {
+        legend: { display: true }
+      }
+    }
+  });
+
+  document.getElementById('toggle-daily').addEventListener('click', function() {
+    chart.data.labels = dailyLabels;
+    chart.data.datasets[0].data = dailyBankroll;
+    chart.update();
+  });
+
+  document.getElementById('toggle-weekly').addEventListener('click', function() {
+    chart.data.labels = weeklyLabels;
+    chart.data.datasets[0].data = weeklyBankroll;
+    chart.update();
+  });
+  {% endif %}
+</script>
+{% endblock %}
