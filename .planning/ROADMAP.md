@@ -46,7 +46,7 @@ Deferred (acknowledged tech-debt): Nyquist VALIDATION across phases + 3 live hum
 Design: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md` (approved).
 
 - [x] **Phase 1: Foundation & Data Layer** — One-command localhost launch (Flask verified on 3.14.0a2, stdlib fallback), 127.0.0.1-only, read-only data layer that tolerates a mid-write workbook lock (completed 2026-06-24)
-- [ ] **Phase 2: Read Views** — Today (props/picks +EV/prob/edge/confidence), Slips (status/payout/legs + why-paired), History (W/L overall+per-sport, bankroll/ROI chart, per-tier breakdown)
+- [x] **Phase 2: Read Views** — Today (props/picks +EV/prob/edge/confidence), Slips (status/payout/legs + why-paired), History (W/L overall+per-sport, bankroll/ROI chart, per-tier breakdown) (completed 2026-06-24)
 - [ ] **Phase 3: Safe Actions** — Lock-aware async refresh/re-run, mark-slip-placed, add-note — all additive-only and atomic, betting pipeline untouched
 
 ## Phase Details
@@ -80,7 +80,7 @@ Design: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md` (appro
 **Plans**: 3 plans
   - [x] 02-01-PLAN.md — Wave-0 test scaffold + three read-only view accessors (get_today_board / get_all_slips / get_history_data) in dashboard_data.py (VIEW-01/02/03)
   - [x] 02-02-PLAN.md — Three GET routes + _freshness_context in dashboard.py; Today master table (index.html) + Slips expandable rows (slips.html) (VIEW-01, VIEW-02)
-  - [ ] 02-03-PLAN.md — History page (history.html): W/L overall+per-sport, per-tier breakdown, bankroll/ROI Chart.js chart (VIEW-03)
+  - [x] 02-03-PLAN.md — History page (history.html): W/L overall+per-sport, per-tier breakdown, bankroll/ROI Chart.js chart (VIEW-03)
 **UI hint**: yes
 
 ### Phase 3: Safe Actions
@@ -104,7 +104,7 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Foundation & Data Layer | v3.0 | 3/3 | Complete   | 2026-06-24 |
-| 2. Read Views | v3.0 | 2/3 | In Progress|  |
+| 2. Read Views | v3.0 | 3/3 | Complete   | 2026-06-24 |
 | 3. Safe Actions | v3.0 | 0/TBD | Not started | - |
 
 ## Next Milestone
