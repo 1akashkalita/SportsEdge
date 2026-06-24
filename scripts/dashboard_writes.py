@@ -37,15 +37,18 @@ PNL_DIR: Path = DATA / "pnl"
 
 
 # ---------------------------------------------------------------------------
-# Private helpers
+# Module-level helpers (inlined — never import from sports_system_runner)
 # ---------------------------------------------------------------------------
 
-def _now_utc_iso() -> str:
-    """Return the current UTC time as an ISO 8601 string with second precision."""
+def now_utc_iso() -> str:
+    """Return the current UTC time as an ISO 8601 string with second precision.
+
+    Mirrors slip_payouts.py:183-184. Inlined here to avoid importing the runner.
+    """
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _ensure_ws_columns(ws: Any, columns: list[str]) -> dict[str, int]:
+def ensure_ws_columns(ws: Any, columns: list[str]) -> dict[str, int]:
     """Add missing columns to the worksheet header row and return a col-name→index map.
 
     Mirrors sports_system_runner.py:6898-6904 (ensure_ws_columns). Inlined here
@@ -89,9 +92,31 @@ def mark_placed(date: str, slip_id: str, placed: bool) -> None:
         KeyError: if the Slip History sheet is missing from the workbook.
         RuntimeError: if no row matches (date, slip_id).
     """
-    raise NotImplementedError(
-        "mark_placed is not yet implemented — Plan 03-02 will provide the working body."
-    )
+    master_path = PNL_DIR / "master_pnl.xlsx"
+    date_norm = str(date)[:10]
+
+    with workbook_file_lock(master_path):
+        wb = safe_load_workbook(master_path)
+        ws = wb["Slip History"]
+        cols = ensure_ws_columns(ws, ["Placed", "Placed At", "Operator Note"])
+
+        matched = False
+        for r in range(2, ws.max_row + 1):
+            if (
+                str(ws.cell(r, 1).value or "")[:10] == date_norm
+                and str(ws.cell(r, 2).value or "") == slip_id
+            ):
+                ws.cell(r, cols["Placed"]).value = placed
+                ws.cell(r, cols["Placed At"]).value = now_utc_iso() if placed else None
+                matched = True
+                break
+
+        if not matched:
+            raise RuntimeError(
+                f"mark_placed: no Slip History row found for date={date!r} slip_id={slip_id!r}"
+            )
+
+        safe_save_workbook(wb, master_path)
 
 
 def add_note(date: str, slip_id: str, note: str) -> None:
@@ -116,6 +141,27 @@ def add_note(date: str, slip_id: str, note: str) -> None:
         KeyError: if the Slip History sheet is missing from the workbook.
         RuntimeError: if no row matches (date, slip_id).
     """
-    raise NotImplementedError(
-        "add_note is not yet implemented — Plan 03-02 will provide the working body."
-    )
+    master_path = PNL_DIR / "master_pnl.xlsx"
+    date_norm = str(date)[:10]
+
+    with workbook_file_lock(master_path):
+        wb = safe_load_workbook(master_path)
+        ws = wb["Slip History"]
+        cols = ensure_ws_columns(ws, ["Placed", "Placed At", "Operator Note"])
+
+        matched = False
+        for r in range(2, ws.max_row + 1):
+            if (
+                str(ws.cell(r, 1).value or "")[:10] == date_norm
+                and str(ws.cell(r, 2).value or "") == slip_id
+            ):
+                ws.cell(r, cols["Operator Note"]).value = str(note).strip()
+                matched = True
+                break
+
+        if not matched:
+            raise RuntimeError(
+                f"add_note: no Slip History row found for date={date!r} slip_id={slip_id!r}"
+            )
+
+        safe_save_workbook(wb, master_path)
