@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 Stability Hardening** — Phases 1–5 (shipped 2026-06-22) — see [milestones/v1.0-ROADMAP.md](./milestones/v1.0-ROADMAP.md)
 - ✅ **v2.0 Slips & Props Tracking** — Phases 1–4 + 04.1 (shipped 2026-06-24) — see [milestones/v2.0-ROADMAP.md](./milestones/v2.0-ROADMAP.md)
-- 🚧 **v3.0 Local Dashboard** — Phases 1–3 (in progress)
+- ✅ **v3.0 Local Dashboard** — Phases 1–3 (shipped 2026-06-24)
 
 ## Phases
 
@@ -39,7 +39,7 @@ Deferred (acknowledged tech-debt): Nyquist VALIDATION across phases + 3 live hum
 
 </details>
 
-### 🚧 v3.0 Local Dashboard (In Progress)
+### ✅ v3.0 Local Dashboard (Shipped 2026-06-24)
 
 **Milestone Goal:** A `localhost` web dashboard so the operator can *see* the whole system at a glance — today's props/picks by platform & sport (with +EV, model probability, edge, confidence), all slips with why-they're-paired insight, and win/loss history overall + per sport — plus a few safe, additive-only actions, without touching any betting logic. Almost entirely a read-layer over already-persisted data; the only writes are three guarded, additive actions.
 
@@ -47,7 +47,7 @@ Design: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md` (appro
 
 - [x] **Phase 1: Foundation & Data Layer** — One-command localhost launch (Flask verified on 3.14.0a2, stdlib fallback), 127.0.0.1-only, read-only data layer that tolerates a mid-write workbook lock (completed 2026-06-24)
 - [x] **Phase 2: Read Views** — Today (props/picks +EV/prob/edge/confidence), Slips (status/payout/legs + why-paired), History (W/L overall+per-sport, bankroll/ROI chart, per-tier breakdown) (completed 2026-06-24)
-- [ ] **Phase 3: Safe Actions** — Lock-aware async refresh/re-run, mark-slip-placed, add-note — all additive-only and atomic, betting pipeline untouched
+- [x] **Phase 3: Safe Actions** — Lock-aware async refresh/re-run, mark-slip-placed, add-note — all additive-only and atomic, betting pipeline untouched (completed 2026-06-24)
 
 ## Phase Details
 
@@ -97,7 +97,7 @@ Design: `docs/superpowers/specs/2026-06-23-localhost-dashboard-design.md` (appro
   - [x] 03-01-PLAN.md — Wave-0 RED test scaffold (test_dashboard_actions.py, 9 ACTION-01..04 cases) + dashboard_writes.py stub + app.secret_key (ACTION-01..04)
   - [x] 03-02-PLAN.md — Additive write layer: mark_placed + add_note (Slip History on master_pnl.xlsx, atomic) + read-only last_run_record; turns ACTION-02/03/04-write tests green (ACTION-02, ACTION-03, ACTION-04)
   - [x] 03-03-PLAN.md — Flask routes: lock-aware async /action/refresh + /api/status + /action/mark-placed + /action/add-note; turns ACTION-01 tests green (ACTION-01, ACTION-02, ACTION-03)
-  - [ ] 03-04-PLAN.md — UI: flash banner (base.html) + slip action forms/state + refresh widget + status poll (slips.html) + human-verify checkpoint (ACTION-01, ACTION-02, ACTION-03)
+  - [x] 03-04-PLAN.md — UI: flash banner (base.html) + slip action forms/state + refresh widget + status poll (slips.html) + human-verify checkpoint (ACTION-01, ACTION-02, ACTION-03)
 **UI hint**: yes
 
 ## Progress
@@ -109,7 +109,7 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|-----------|----------------|--------|-----------|
 | 1. Foundation & Data Layer | v3.0 | 3/3 | Complete   | 2026-06-24 |
 | 2. Read Views | v3.0 | 3/3 | Complete   | 2026-06-24 |
-| 3. Safe Actions | v3.0 | 3/4 | In Progress|  |
+| 3. Safe Actions | v3.0 | 4/4 | Complete   | 2026-06-24 |
 
 ## Next Milestone
 
