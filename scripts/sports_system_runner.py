@@ -5265,6 +5265,81 @@ def game_matches_row(game: dict[str, Any], row: dict[str, Any]) -> bool:
     return bool((str(game.get("home_team") or "").lower() in text.lower()) or (str(game.get("away_team") or "").lower() in text.lower()))
 
 
+def _player_in_boxscore_strict(player: str, player_stats: dict[str, Any]) -> bool:
+    """Return True iff `player` resolves to exactly one box-score entry by an
+    exact or unique-canonical name match.
+
+    Deliberately STRICTER than name_match: it never uses the last-name-only
+    fallback, so a prop is never bound to a game merely because a different
+    player there shares the surname. Used only to confirm a prop belongs to a
+    game (the actual stat lookup still uses the full name_match tiers).
+    """
+    if not player or not player_stats:
+        return False
+    keys = list(player_stats.keys())
+    if str(player).lower() in keys:
+        return True
+    pc = _canonical_name(player)
+    if not pc:
+        return False
+    return sum(1 for k in keys if _canonical_name(k) == pc) == 1
+
+
+def _team_value_matches_game(team: Any, game: dict[str, Any]) -> bool:
+    """Return True iff the prop's `Team` value names one of this game's teams.
+
+    Recognises full names, abbreviations (via team_aliases) and bare nicknames
+    ("Yankees", "Cubs", "Red Sox") by comparing against THIS game's two teams
+    only — never the whole row or other games. Underdog UUID team_ids match
+    nothing here (they don't alias to a code and never share a name token), so
+    they correctly fall through to box-score membership.
+    """
+    if not team:
+        return False
+    home = game.get("home_team")
+    away = game.get("away_team")
+    if team_aliases(team) & (team_aliases(home) | team_aliases(away)):
+        return True
+    t = str(team).strip().lower()
+    if len(t) < 3:  # too short/empty to disambiguate safely
+        return False
+    for side in (home, away):
+        s = str(side or "").strip().lower()
+        if not s:
+            continue
+        if t == s or t in s.split() or s in t.split():
+            return True
+        if len(t) >= 5 and t in s:  # multi-word nickname e.g. "red sox"
+            return True
+        if len(s) >= 5 and s in t:
+            return True
+    return False
+
+
+def prop_belongs_to_game(game: dict[str, Any], row: dict[str, Any], player_stats: dict[str, Any]) -> bool:
+    """Decide whether a prop row should be graded against `game`.
+
+    Uses RELIABLE identity only — never the start-time-window or text-substring
+    fallbacks in game_matches_row. Those bind a prop to ANY same-slot game and
+    are the cause of "player looked up against the wrong team" grading errors:
+    props whose Team is an Underdog UUID cannot be resolved by team_aliases, so
+    game_matches_row falls through to the 5-minute start-time window and binds
+    the player to an unrelated same-night game whose box score omits them
+    ("No final stat line found ... not found in ESPN box score").
+
+    A prop belongs to this game iff:
+      1. its Game ID equals this game's event id, OR
+      2. its Team names one of this game's teams (recognised, non-UUID), OR
+      3. the player actually appears in THIS game's box score (strict match).
+    """
+    gid = str(row.get("Game ID") or row.get("game_id") or "")
+    if gid and gid == str(game.get("event_id") or game.get("id") or ""):
+        return True
+    if _team_value_matches_game(row.get("Team"), game):
+        return True
+    return _player_in_boxscore_strict(str(row.get("Player Name") or ""), player_stats)
+
+
 def odds_profit(result: str, units: float, odds: Any = None) -> float:
     if result == "LOSS":
         return round(units * -1, 3)
@@ -6320,7 +6395,11 @@ def grade_game_in_workbook(sport: str, game: dict[str, Any], date: str | None = 
         if not vals or str(vals[0] or "")[:10] != date:
             continue
         row = dict(zip(prop_headers, vals))
-        if not game_matches_row(game, row):
+        # Bind props to games by RELIABLE identity only (Game ID / recognized
+        # team / actual box-score membership) — not game_matches_row's loose
+        # start-time/text fallbacks, which mis-bind UUID-team props to unrelated
+        # same-night games and produce "not found in ESPN box score" errors.
+        if not prop_belongs_to_game(game, row, player_stats):
             continue
         ref = f"PROP:{row.get('Player Name')} {row.get('Stat')} {row.get('Line')}"
         # Guard: skip only if the stored Result is terminal (casing-robust).
@@ -7140,7 +7219,7 @@ def injury_monitor(sport: str) -> dict[str, Any]:
     }
 
 
-def espn_player_stats_by_event(sport: str, event_id: str) -> dict[str, dict[str, float]]:
+def espn_player_stats_by_event(sport: str, event_id: str, attach_team: bool = False) -> dict[str, dict[str, float]]:
     """Return per-player box-score stats from the ESPN CDN summary endpoint.
 
     For MLB: each player row is a dict with optional "batting" and/or "pitching"
@@ -7153,6 +7232,11 @@ def espn_player_stats_by_event(sport: str, event_id: str) -> dict[str, dict[str,
     the same keys and aliases as before this change (byte-identical behaviour).
     The FG/3PT/FT split-on-"-" logic and alias_pairs are preserved verbatim so
     NBA grading paths continue to work unchanged.
+
+    When ``attach_team`` is True each player row also carries a top-level
+    ``"_team"`` key holding the ESPN team abbreviation (e.g. "NYY"). This is
+    OPT-IN (default off → byte-identical output) and used only by the date-wide
+    slip-grading merge to disambiguate same-surname players across games.
     """
     if not event_id:
         return {}
@@ -7177,6 +7261,7 @@ def espn_player_stats_by_event(sport: str, event_id: str) -> dict[str, dict[str,
     _id_to_name: dict[str, str] = {}
 
     for team in box.get("players", []) or []:
+        team_abbr = str((team.get("team") or {}).get("abbreviation") or "") if attach_team else ""
         for group_data in team.get("statistics", []) or []:
             labels = group_data.get("keys") or group_data.get("names") or group_data.get("labels") or []
             # Group identity: "batting" or "pitching" for MLB; None for NBA.
@@ -7192,6 +7277,8 @@ def espn_player_stats_by_event(sport: str, event_id: str) -> dict[str, dict[str,
                 athlete_id = str(a.get("id", ""))
                 if athlete_id:
                     _id_to_name[athlete_id] = name_lower
+                if team_abbr:
+                    stats.setdefault(name_lower, {})["_team"] = team_abbr
 
                 values = athlete.get("stats") or []
 

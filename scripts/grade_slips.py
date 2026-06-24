@@ -48,6 +48,9 @@ safe_load_workbook = _runner.safe_load_workbook
 save_workbook_atomic = _runner.save_workbook_atomic
 ensure_workbook = _runner.ensure_workbook
 master_pnl_workbook = _runner.master_pnl_workbook
+name_match = _runner.name_match
+team_aliases = _runner.team_aliases
+_canonical_name = _runner._canonical_name
 
 from slip_payouts import (
     load_payout_config,
@@ -161,7 +164,9 @@ def build_date_box_scores(
             if not event_id:
                 continue
             try:
-                box = espn_player_stats_by_event(sport_lower, event_id)
+                # attach_team=True tags each row with its ESPN team abbreviation
+                # so grade_leg can reject fuzzy cross-team same-surname matches.
+                box = espn_player_stats_by_event(sport_lower, event_id, attach_team=True)
             except Exception:
                 box = {}
 
@@ -178,6 +183,40 @@ def build_date_box_scores(
 # ---------------------------------------------------------------------------
 # Per-leg grader
 # ---------------------------------------------------------------------------
+
+def _leg_player_team_consistent(
+    sport_stats: dict[str, Any], player: str, leg_team: str
+) -> bool:
+    """Return False ONLY when a leg should abstain on team grounds.
+
+    A leg abstains iff its player resolves to the box score by a FUZZY name
+    match (initial-form / last-name fallback — not exact or unique-canonical)
+    AND the leg carries a recognised team AND the matched player's box row has a
+    known team AND the two teams do not overlap. Every other case returns True
+    (preserve prior behaviour): exact matches are authoritative, and an
+    unrecognised/UUID leg team or a team-less box cannot be verified.
+    """
+    if not sport_stats or not player:
+        return True
+    keys = list(sport_stats.keys())
+    pl = str(player).lower()
+    if pl in keys:
+        return True  # exact byte match — authoritative
+    pc = _canonical_name(player)
+    if pc and sum(1 for k in keys if _canonical_name(k) == pc) == 1:
+        return True  # unique canonical equality — authoritative
+    matched = name_match(player, keys)
+    if not matched:
+        return True  # no match; stat_value_for_prop will abstain on its own
+    resolved_leg = team_aliases(leg_team)
+    if len(resolved_leg) <= 2:
+        return True  # leg team unrecognised (e.g. Underdog UUID) — can't verify
+    row = sport_stats.get(matched)
+    box_team = row.get("_team") if isinstance(row, dict) else None
+    if not box_team:
+        return True  # box row has no team tag (injected/legacy) — can't verify
+    return bool(resolved_leg & team_aliases(box_team))
+
 
 def grade_leg(
     leg: dict[str, Any],
@@ -210,6 +249,13 @@ def grade_leg(
     # (e.g. "hits runs rbis") to the canonical form stat_value_for_prop expects
     # (e.g. "hits+runs+rbis").  Without this, ALL combo legs abstain to PENDING.
     stat = _normalize_stat(str(leg.get("stat_type") or ""))
+
+    # MONEY-SAFETY: abstain rather than grade against a same-surname player on
+    # another team. Only fires on a FUZZY match where the leg's recognised team
+    # disagrees with the matched player's box-score team; exact matches,
+    # unrecognised/UUID leg teams and team-less boxes are unaffected.
+    if not _leg_player_team_consistent(sport_stats, player, str(leg.get("team") or "")):
+        return {"result": LEG_PENDING, "actual": None, "source": "manual", "confidence": 0.0}
 
     actual, src, conf = stat_value_for_prop(sport_stats, player, stat)
 
