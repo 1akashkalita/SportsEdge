@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Hermes Sports Dashboard{% endblock %}</title>
+  <!-- Pico.css — classless dark theme via CDN (D-05, RESEARCH A1) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    /* Density overrides — operator-tool aesthetic (D-05 dense tables) */
+    table { font-size: 0.85rem; }
+    thead th { white-space: nowrap; }
+    td, th { padding: 0.3rem 0.5rem; }
+    nav { padding: 0.5rem 1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .nav-title { font-weight: bold; font-size: 1.1rem; margin-right: 1rem; }
+    .nav-active { text-decoration: underline; }
+    .badge-updating {
+      background: #e67e22;
+      color: #fff;
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      vertical-align: middle;
+    }
+    .badge-last-updated {
+      color: #aaa;
+      font-size: 0.75rem;
+      vertical-align: middle;
+    }
+    .stub-tab {
+      color: #555;
+      cursor: default;
+      text-decoration: none;
+    }
+    header.page-header { padding: 0.4rem 1rem; border-bottom: 1px solid #333; }
+    main { padding: 1rem; }
+  </style>
+</head>
+<body>
+
+<!-- Persistent nav — Phase-2 view links + deferred reserved stub tabs (D-05, D-context) -->
+<nav>
+  <span class="nav-title">Hermes</span>
+
+  <!-- Phase-2 view links (Today / Slips / History) — active in Phase 2 -->
+  <a href="/">Today</a>
+  <a href="/slips">Slips</a>
+  <a href="/history">History</a>
+
+  <!-- Deferred stub tabs — TAB-01/02/03 — inert, reserved for future milestones M2-M4 -->
+  <a href="#" class="stub-tab" aria-disabled="true" title="Coming in a future milestone">Calibration</a>
+  <a href="#" class="stub-tab" aria-disabled="true" title="Coming in a future milestone">Line-changes</a>
+  <a href="#" class="stub-tab" aria-disabled="true" title="Coming in a future milestone">Live</a>
+
+  <!-- Freshness hints — computed per request by the index route (D-01/D-02) -->
+  <span style="margin-left: auto; display: flex; align-items: center; gap: 0.6rem;">
+    {% if write_in_progress %}
+      <span class="badge-updating">updating&hellip;</span>
+    {% endif %}
+    {% if last_updated %}
+      <span class="badge-last-updated">last updated {{ last_updated }}</span>
+    {% endif %}
+  </span>
+</nav>
+
+<!-- Page content -->
+<main>
+  {% block content %}{% endblock %}
+</main>
+
+<!-- Reserved Chart.js slot for Phase-2 History view (A2 — not loaded in Phase 1) -->
+{% block scripts %}{% endblock %}
+
+</body>
+</html>
