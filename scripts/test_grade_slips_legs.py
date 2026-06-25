@@ -135,6 +135,15 @@ class TestGradeLegOVERWin(unittest.TestCase):
         self.assertEqual(out["result"], "WIN")
         self.assertEqual(out["actual"], 3.0)
 
+    def test_mlb_over_win_normalized_combo(self) -> None:
+        # "hits runs rbis" (space-separated, as build_slips emits) normalizes to
+        # "hits+runs+rbis" and resolves: Freeman 3 hits + 2 runs + 1 RBI = 6 vs 2.5 -> WIN.
+        # Without _normalize_stat this combo would wrongly abstain to PENDING.
+        leg = _mlb_leg("freddie freeman", "hits runs rbis", 2.5, "OVER")
+        out = grade_leg(leg, _FIXTURE_BOX_SCORES)
+        self.assertEqual(out["result"], "WIN")
+        self.assertEqual(out["actual"], 6.0)
+
 
 class TestGradeLegOVERLoss(unittest.TestCase):
     """OVER leg: actual < line -> LOSS."""
@@ -211,14 +220,16 @@ class TestGradeLegAbstain(unittest.TestCase):
         self.assertNotEqual(out["result"], "LOSS")
         self.assertIsNone(out["actual"])
 
-    def test_unrecognised_mlb_stat_returns_pending_not_loss(self) -> None:
-        # "hits runs rbis" (space-separated, as used in real slip legs) is NOT in
-        # the P1 MLB disposition table (the table expects "hits+runs+rbis").
-        # This correctly abstains — no fabricated grade.
-        leg = _mlb_leg("freddie freeman", "hits runs rbis", 2.5, "OVER")
+    def test_unrecognised_mlb_combo_returns_pending_not_loss(self) -> None:
+        # A combo NOT in _STAT_NORM_MAP and not derivable (e.g. the 4-way
+        # "hits runs rbis walks") is genuinely unresolvable and MUST abstain —
+        # never a fabricated grade. (The 3-way "hits runs rbis" IS normalized and
+        # grades; see TestGradeLegOVERWin.test_mlb_over_win_normalized_combo.)
+        leg = _mlb_leg("freddie freeman", "hits runs rbis walks", 2.5, "OVER")
         out = grade_leg(leg, _FIXTURE_BOX_SCORES)
         self.assertEqual(out["result"], LEG_PENDING)
         self.assertNotEqual(out["result"], "LOSS")
+        self.assertIsNone(out["actual"])
 
 
 if __name__ == "__main__":
