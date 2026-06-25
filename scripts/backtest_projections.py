@@ -14,6 +14,7 @@ NOT in the cron path. Read-only over data/; never writes to live workbooks.
 """
 from __future__ import annotations
 
+import contextlib
 import statistics
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,25 @@ import generate_projections as gp
 
 ROOT = Path(__file__).resolve().parents[1]
 HIT_RATE_DIR = ROOT / "data" / "research" / "hit_rates"
+
+
+@contextlib.contextmanager
+def _raw_model():
+    """Pin the sigma calibration factor to 1.0 for the duration of a prediction.
+
+    build_projection multiplies sigma by load_calibration_factor(sport), read from
+    data/research/calibration.json — a file that is rewritten weekly and is absent in
+    fresh checkouts. The harness measures the RAW (uncalibrated) model so the baseline is
+    deterministic and reproducible regardless of disk state; the calibration layer is the
+    thing being evaluated, not part of the measurement. The original is always restored,
+    so this never poisons generate_projections for any other caller in the same process.
+    """
+    orig = gp.load_calibration_factor
+    gp.load_calibration_factor = lambda *_a, **_k: 1.0
+    try:
+        yield
+    finally:
+        gp.load_calibration_factor = orig
 
 
 def _actual(game: dict) -> float | None:
@@ -72,10 +92,11 @@ def predict_at(player_doc: dict, stat_name: str, sport: str,
         "stat": stat,
         "file": player_doc.get("player_name", ""),
     }
-    proj = gp.build_projection(
-        player_doc.get("player_name", ""), player_doc.get("team", ""),
-        stat_name, line, hit_rec, sport, {},   # empty pace_values -> neutral pace (v1)
-    )
+    with _raw_model():   # measure the raw model, independent of on-disk calibration.json
+        proj = gp.build_projection(
+            player_doc.get("player_name", ""), player_doc.get("team", ""),
+            stat_name, line, hit_rec, sport, {},   # empty pace_values -> neutral pace (v1)
+        )
     projection = float(proj["projection"])
     sigma = float(proj["sigma"])
     safe_sigma = max(0.75, sigma)

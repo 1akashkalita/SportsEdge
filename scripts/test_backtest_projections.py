@@ -84,6 +84,24 @@ class WalkForwardCoreTests(unittest.TestCase):
         self.assertFalse(p["push"])
         self.assertEqual(p["over_outcome"], 1)
 
+    def test_harness_ignores_on_disk_calibration_factor(self):
+        # build_projection multiplies sigma by load_calibration_factor (from the weekly
+        # calibration.json). The harness must measure the RAW model so the baseline is
+        # reproducible regardless of disk state: a non-1.0 factor must NOT leak into sigma.
+        import generate_projections as gp
+        orig = gp.load_calibration_factor
+        gp.load_calibration_factor = lambda *a, **k: 1.5   # pretend a big factor is on disk
+        try:
+            doc = player_with_actuals([10.0] * 8, "strikeouts", "mlb")
+            preds = bt.walk_forward_player_stat(doc, "strikeouts", "mlb", min_prior=5)
+            self.assertTrue(preds)
+            for p in preds:
+                self.assertAlmostEqual(p["sigma"], 0.75, places=3)   # floor, NOT 0.75 * 1.5
+        finally:
+            gp.load_calibration_factor = orig
+        # restored cleanly for other tests in the process
+        self.assertIs(gp.load_calibration_factor, orig)
+
     def test_requires_min_prior_games(self):
         doc = player_with_actuals([10.0, 10.0, 10.0], "strikeouts", "mlb")
         preds = bt.walk_forward_player_stat(doc, "strikeouts", "mlb", min_prior=5)
