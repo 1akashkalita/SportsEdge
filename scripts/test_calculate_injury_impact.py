@@ -21,7 +21,22 @@ from openpyxl import load_workbook
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "calculate_injury_impact.py"
 TODAY = datetime.now().strftime("%Y-%m-%d")
-REAL_WORKBOOK = ROOT / "data" / "nba" / f"nba_{TODAY}.xlsx"
+NBA_DIR = ROOT / "data" / "nba"
+
+
+def _schema_workbook() -> Path | None:
+    """A real NBA workbook to source the live schema from — today's if the cron has
+    already produced it, else the most recent available. The test clears the props and
+    seeds its own, so only the SCHEMA (sheets/columns) matters. This removes a flaky
+    time-of-day dependence on the daily-picks cron having run yet (NBA is offseason in
+    summer, so today's workbook may not exist at early-morning CI time)."""
+    today = NBA_DIR / f"nba_{TODAY}.xlsx"
+    if today.exists():
+        return today
+    # Dated workbooks only (nba_YYYY-...) — exclude specials like nba_finals_tracker.xlsx,
+    # which do not carry the daily Player Props schema. Date-prefixed names sort latest-last.
+    candidates = sorted(NBA_DIR.glob("nba_[0-9]*.xlsx"))
+    return candidates[-1] if candidates else None
 
 
 def sha256(path: Path) -> str:
@@ -96,13 +111,20 @@ def expected_ev(prob: float) -> float:
 
 class CalculateInjuryImpactIntegrationTest(unittest.TestCase):
     def test_anthony_davis_out_adjusts_matching_temp_workbook_rows(self) -> None:
-        self.assertTrue(REAL_WORKBOOK.exists(), f"Missing real workbook: {REAL_WORKBOOK}")
-        before_hash = sha256(REAL_WORKBOOK)
+        source_workbook = _schema_workbook()
+        if source_workbook is None:
+            self.skipTest("no NBA workbook available to source the schema from")
+        before_hash = sha256(source_workbook)
         with tempfile.TemporaryDirectory(prefix="injury_impact_test_") as td:
             temp_workbook = Path(td) / "nba_injury_impact_test.xlsx"
-            shutil.copy2(REAL_WORKBOOK, temp_workbook)
+            shutil.copy2(source_workbook, temp_workbook)
             wb = load_workbook(temp_workbook)
             ws = wb["Player Props"]
+            # Clear any existing prop rows so the count of adjusted rows is deterministic
+            # regardless of what live props the source workbook happened to contain
+            # (e.g. real same-day LAL props would otherwise inflate rows_updated).
+            if ws.max_row > 1:
+                ws.delete_rows(2, ws.max_row - 1)
             lebron_row = append_fake_prop(ws, "LeBron James", "points", 25.0, 27.5, "C")
             reaves_row = append_fake_prop(ws, "Austin Reaves", "assists", 6.0, 6.5, "C")
             wb.save(temp_workbook)
@@ -195,7 +217,7 @@ class CalculateInjuryImpactIntegrationTest(unittest.TestCase):
                 self.assertIn(f"final {check['expected_final_tier']}", reasoning)
             wb.close()
 
-        self.assertEqual(sha256(REAL_WORKBOOK), before_hash, "Real workbook changed during integration test")
+        self.assertEqual(sha256(source_workbook), before_hash, "Source workbook changed during integration test")
 
 
 if __name__ == "__main__":
