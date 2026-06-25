@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-24)
 Phase: 03
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-06-24
+Last activity: 2026-06-25 - Completed quick task 260625-2rl: fix stale golden values in test_generate_projections
 
 Progress: [██████████] 100%
 
@@ -91,6 +91,12 @@ None yet.
 - Flask must be confirmed to import/serve on the system `python3` (3.14.0a2) at the start of Phase 1 — cp314 C-ext wheels can crash at import (project memory). If it fails, the stdlib `http.server` fallback becomes the tech for the whole milestone.
 - Read contention: dashboard reads can race a mid-write atomic workbook swap — must be tolerated (JSON-first reads, `read_only=True`, retry/skip) so a read never corrupts data or errors out (DASH-04).
 - "Why paired" depth (VIEW-02): v1 surfaces stored Correlated-Parlays `Reasoning`/`Correlation Group` + derived correlation metadata only; quantified leg-correlation modeling is a later enhancement, not v1.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260625-2rl | fix stale golden values in test_generate_projections (2 pre-existing failures) | 2026-06-25 | 711a755 | [260625-2rl-fix-stale-golden-values-in-test-generate](./quick/260625-2rl-fix-stale-golden-values-in-test-generate/) |
 
 ## Deferred Items
 
