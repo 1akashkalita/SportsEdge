@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from calibration import load_calibration_factor
+from calibration import load_calibration_factor, load_probability_shrink_factor
 from line_timing import LINE_TIMING_FIELDS
 from workbook_io import safe_load_workbook, safe_save_workbook
 
@@ -35,6 +35,50 @@ PT = ZoneInfo("America/Los_Angeles")
 
 session = requests.Session()
 session.headers.update({"User-Agent": "SportsEdge projection builder/1.0"})
+
+HERMES_ENV = Path.home() / ".hermes" / ".env"
+
+
+def _env_value(key: str) -> str | None:
+    """Read config from process env, then ~/.hermes/.env (KEY=VALUE).
+
+    Self-contained mirror of sports_system_runner.env_value / build_slips._env_value;
+    this module runs as a subprocess and must read ~/.hermes/.env directly.
+    """
+    value = os.environ.get(key)
+    if value:
+        return value.strip().strip('"').strip("'")
+    try:
+        if not HERMES_ENV.exists():
+            return None
+        for line in HERMES_ENV.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            k, v = stripped.split("=", 1)
+            if k.strip() == key:
+                return v.strip().strip('"').strip("'") or None
+    except Exception:
+        return None
+    return None
+
+
+def _env_bool(key: str, default: bool) -> bool:
+    raw = _env_value(key)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _calibrated_probabilities_enabled() -> bool:
+    """Source-level probability calibration stopgap (default OFF).
+
+    When ON, a direct per-sport probability shrink (calibration.load_probability_shrink_factor)
+    REPLACES the sigma-widening calibration factor — the two never stack — and the
+    slip engine skips its own re-shrink for calibrated sports. Flag OFF => projections
+    are byte-identical to the legacy sigma-only path.
+    """
+    return _env_bool("USE_CALIBRATED_PROBABILITIES", False)
 
 TEAM_ENDPOINT = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{team_id}"
 
@@ -392,14 +436,30 @@ def build_projection(player: str, team: str, stat_name: str, pp_line: float, hit
     edge = projection - pp_line
     hr10 = float(stat.get("hit_rate_l10") or 0)
     sigma, sigma_source = estimate_sigma(stat, stat_name)
-    # D-07 / D-09: apply per-sport calibration factor to sigma at projection time.
-    # factor > 1.0 widens sigma (model less confident); < 1.0 narrows.
+    # D-07 / D-09: per-sport calibration at projection time. Two mutually exclusive
+    # mechanisms, selected by USE_CALIBRATED_PROBABILITIES (default OFF):
+    #   flag OFF -> widen sigma by the per-sport calibration factor (legacy path);
+    #   flag ON  -> a direct per-sport probability shrink (below) REPLACES the sigma
+    #               widen so the two never stack.
     # Read at CALL TIME — never cached at import time (anti-pattern).
-    cal_factor = load_calibration_factor(sport)
+    calibrate_probs = _calibrated_probabilities_enabled()
+    cal_factor = 1.0 if calibrate_probs else load_calibration_factor(sport)
     if cal_factor != 1.0:
         sigma = sigma * cal_factor
         sigma_source = f"{sigma_source} × cal={cal_factor:.4f}"
     over_prob = round(model_over_probability(projection, pp_line, sigma), 4)
+    prob_shrink_applied: float | None = None
+    if calibrate_probs:
+        # Symmetric shrink toward 0.5 by the per-sport overconfidence factor; s == 1.0
+        # (uncalibrated sport, e.g. gate-not-met NBA) leaves over_prob untouched.
+        shrink = load_probability_shrink_factor(sport)
+        if shrink != 1.0:
+            over_prob = round(clamp_probability(0.5 + (over_prob - 0.5) * shrink), 4)
+            sigma_source = f"{sigma_source} × pcal={shrink:.4f}"
+            # Record the applied factor so the runner can persist it. The calibration
+            # learning loop un-shrinks by this factor to recover the RAW model probability,
+            # preventing the stopgap from poisoning its own calibration (Component E).
+            prob_shrink_applied = shrink
     ev = calculate_ev(over_prob)
     flags: list[str] = []
     if float(stat.get("vs_opponent_hit_rate") or 0) <= 0.30:
@@ -424,7 +484,7 @@ def build_projection(player: str, team: str, stat_name: str, pp_line: float, hit
         f"EV: {ev:+.2f} | Tier hit-rate source: {hit_rate_today_ctx['source']} | "
         f"sigma={sigma:.2f} ({sigma_source}); base={base:.2f}; {pace_reason}; minutes_trend={trend}"
     )
-    return {
+    result = {
         "player_name": player,
         "team": team,
         "stat_type": normalize_prop_stat(stat_name),
@@ -456,6 +516,11 @@ def build_projection(player: str, team: str, stat_name: str, pp_line: float, hit
         "sample_size": sample_size,
         "source_hit_rate_file": hit_rec.get("file"),
     }
+    # Additive, only present when a shrink was actually applied (flag ON + s != 1.0),
+    # so flag-OFF projection JSON stays byte-identical.
+    if prob_shrink_applied is not None:
+        result["prob_shrink_factor"] = round(prob_shrink_applied, 4)
+    return result
 
 
 def update_workbook_and_build(sport: str, date: str) -> dict[str, Any]:

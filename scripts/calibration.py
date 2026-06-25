@@ -29,6 +29,15 @@ MAX_STEP = 0.05
 CLAMP_LO = 0.85
 CLAMP_HI = 1.20
 
+# Source-level probability calibration stopgap (applied flag-gated in
+# generate_projections via USE_CALIBRATED_PROBABILITIES). Derives a per-sport
+# shrink factor s that pulls an overconfident over_probability SYMMETRICALLY
+# toward 0.5: p' = 0.5 + (p - 0.5) * s. s in [SHRINK_FLOOR, 1.0]; s == 1.0 means
+# "do not shrink". This is distinct from the sigma scaler above and the two are
+# never applied together (see generate_projections.build_projection).
+SHRINK_ANCHOR = 0.5
+SHRINK_FLOOR = 0.40
+
 
 def _now_iso() -> str:
     """Return current UTC timestamp in ISO-8601 format (seconds precision)."""
@@ -203,6 +212,13 @@ def read_graded_outcomes_for_sport(
     if not required.issubset(h.keys()):
         return result
 
+    # Component E: optional column recording the per-row shrink factor applied by the
+    # source-level calibration stopgap. When present (>0 and != 1.0) the stored MOP is
+    # un-shrunk back to the RAW model probability so model_implied reflects the model's
+    # TRUE over-confidence — otherwise the stopgap would poison its own calibration.
+    # Absent (legacy rows / pre-migration / blank) -> stored MOP used as-is.
+    shrink_col = h.get("Prob Shrink Factor")
+
     target_sport = sport.upper()
 
     for row_vals in ph.iter_rows(min_row=2, values_only=True):
@@ -231,6 +247,16 @@ def read_graded_outcomes_for_sport(
         if mop_raw is not None:
             try:
                 mop_float = float(mop_raw)
+                # Un-shrink to the RAW model probability when a shrink factor is recorded.
+                if shrink_col is not None:
+                    s_raw = row_vals[shrink_col]
+                    if s_raw is not None:
+                        try:
+                            s = float(s_raw)
+                            if s > 0 and s != 1.0:
+                                mop_float = max(0.0, min(1.0, 0.5 + (mop_float - 0.5) / s))
+                        except (ValueError, TypeError):
+                            pass
                 result["mop_values"].append(mop_float)
                 if result_val == "WIN":
                     result["wins"] += 1
@@ -261,6 +287,76 @@ def load_calibration_factor(sport: str, path: Path = CALIBRATION_PATH) -> float:
             raw = float(cfg.get("factors", {}).get(sport.upper(), 1.0))
             # V5 input validation: clamp any read value into [CLAMP_LO, CLAMP_HI]
             return max(CLAMP_LO, min(CLAMP_HI, raw))
+    except Exception:
+        pass
+    return 1.0
+
+
+def probability_shrink_factor_from_cfg(
+    cfg: dict[str, Any], sport: str, n_gate: int = N_GATE
+) -> float:
+    """Derive a per-sport probability shrink factor from a loaded calibration config.
+
+    Returns ``s`` in ``[SHRINK_FLOOR, 1.0]``::
+
+        s = (empirical - 0.5) / (model_implied - 0.5)
+
+    computed from the most recent audit entry for ``sport`` that carries both
+    ``empirical_hit_rate`` and ``model_implied`` (a "computed" entry).  Applied as
+    ``p' = 0.5 + (p - 0.5) * s`` it makes the model's average over-confidence match
+    its realized hit rate while shrinking both sides symmetrically toward 0.5.
+
+    Returns 1.0 (NO shrink) when:
+    - no computed entry exists for the sport (e.g. NBA, gate never met),
+    - that entry's ``n_with_mop`` < ``n_gate``,
+    - the model is NOT overconfident (``empirical >= model_implied`` -> s would be >= 1),
+    - ``model_implied`` <= 0.5 (no over-side confidence worth shrinking),
+    - the config is empty/malformed.
+
+    ``s`` never exceeds 1.0 (never amplifies confidence) and is floored at
+    ``SHRINK_FLOOR`` (never collapses everything to 0.5).  Never raises.
+    """
+    try:
+        target = str(sport or "").upper()
+        empirical: float | None = None
+        model_implied: float | None = None
+        n_with_mop = 0
+        for entry in reversed((cfg or {}).get("audit", []) or []):
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("sport") or "").upper() != target:
+                continue
+            if entry.get("empirical_hit_rate") is not None and entry.get("model_implied") is not None:
+                empirical = float(entry["empirical_hit_rate"])
+                model_implied = float(entry["model_implied"])
+                n_with_mop = int(entry.get("n_with_mop") or 0)
+                break
+        if empirical is None or model_implied is None:
+            return 1.0
+        if n_with_mop < n_gate:
+            return 1.0
+        if model_implied <= SHRINK_ANCHOR:
+            return 1.0
+        s = (empirical - SHRINK_ANCHOR) / (model_implied - SHRINK_ANCHOR)
+        if s >= 1.0:
+            return 1.0  # model not overconfident — never amplify
+        return max(SHRINK_FLOOR, s)
+    except Exception:
+        return 1.0
+
+
+def load_probability_shrink_factor(
+    sport: str, path: Path = CALIBRATION_PATH, n_gate: int = N_GATE
+) -> float:
+    """Read calibration.json and derive the per-sport probability shrink factor.
+
+    Returns 1.0 (no shrink) if the file is absent, corrupt, or has no computed
+    entry for the sport.  Never raises.
+    """
+    try:
+        if Path(path).exists():
+            cfg = json.loads(Path(path).read_text(encoding="utf-8"))
+            return probability_shrink_factor_from_cfg(cfg, sport, n_gate=n_gate)
     except Exception:
         pass
     return 1.0

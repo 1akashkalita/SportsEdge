@@ -287,7 +287,7 @@ PROPS_HEADERS = [
     "Confidence", "Units", "Platform", "Model Projection", "Edge", "Model Over Probability", "EV",
     "Edge Type Tags", "Opening Line", "Demon Available", "Goblin Available", "Injury Flag",
     "Correlation Group", "Slip ID",
-] + LINE_TIMING_FIELDS + MARKET_CONTEXT_FIELDS
+] + LINE_TIMING_FIELDS + MARKET_CONTEXT_FIELDS + ["Prob Shrink Factor"]
 CLV_HEADERS = [
     "Date", "Sport", "Game ID", "Pick Ref", "Morning Line", "Closing Line", "CLV", "Status", "Result", "PnL Units",
 ]
@@ -321,7 +321,7 @@ RESULT_HEADERS = [
     "Result", "Units", "PnL", "CLV", "Opening Line", "Closing Line", "Line Movement",
     "Favorable Line Move 0.5+", "Demon Available", "Goblin Available", "Injury Flag",
     "Correlation Group", "Slip ID", "Graded At", "Notes", "Game", "Actual",
-] + MARKET_CONTEXT_FIELDS + ["Result Source", "Result Confidence"]
+] + MARKET_CONTEXT_FIELDS + ["Result Source", "Result Confidence", "Prob Shrink Factor"]
 PROP_ACCURACY_HEADERS = [
     "Week", "Sport", "Total Props", "Wins", "Losses", "Pushes", "Hit Rate", "Updated At",
 ]
@@ -2979,6 +2979,7 @@ def generate_picks(
             "model_projection": (projection or {}).get("projection"), "projection": (projection or {}).get("projection"),
             "edge": (projection or {}).get("edge"), "model_edge": (projection or {}).get("edge"),
             "model_over_probability": (projection or {}).get("over_probability"), "over_probability": (projection or {}).get("over_probability"),
+            "prob_shrink_factor": (projection or {}).get("prob_shrink_factor"),
             "ev": (projection or {}).get("expected_value"), "expected_value": (projection or {}).get("expected_value"),
             "confidence_tier": (projection or {}).get("confidence_tier"), "edge_type_tags": infer_edge_tags_from_reasoning("; ".join(factors)),
             "opening_line": line, "demon_available": has_demon, "goblin_available": has_goblin,
@@ -3383,6 +3384,10 @@ def daily_picks(sport: str) -> dict[str, Any]:
             bool_cell(pick.get("market_disagreement")), pick.get("sportsbook_confirmation"),
             pick.get("clv_baseline_book"), pick.get("clv_baseline_odds"),
         ] + line_timing_workbook_values(pick)
+        # NOTE: prob_shrink_factor is deliberately NOT written to the Picks sheet. The Picks
+        # sheet gets runtime-appended ESPN columns (enrich_picks_with_espn_odds), so a trailing
+        # positional value would land in the wrong column. The calibration loop reads PROP rows
+        # from the Props sheet -> Pick History (both correct); the Picks grade path skips props.
         picks_ws.append(row)
         record_morning_clv_row(clv_ws, sport, pick)
         if pick.get("kind") == "prop":
@@ -3395,7 +3400,7 @@ def daily_picks(sport: str) -> dict[str, Any]:
                 pick.get("edge"), pick.get("model_over_probability"), pick.get("ev"), pick.get("edge_type_tags"),
                 pick.get("opening_line") or pick.get("line"), bool_cell(pick.get("demon_available")), bool_cell(pick.get("goblin_available")),
                 pick.get("injury_flag"), pick.get("correlation_group"), pick.get("slip_id"),
-            ] + line_timing_workbook_values(pick) + market_context_values(pick))
+            ] + line_timing_workbook_values(pick) + market_context_values(pick) + [pick.get("prob_shrink_factor")])
         else:
             game_pick_count += 1
 
@@ -5127,6 +5132,11 @@ def result_record_from_source(date: str, sport_label: str, source: dict[str, Any
     # Provenance columns (Component 8 — additive, name-keyed, migrated by ensure_ws_columns)
     record["Result Source"] = extra.get("Result Source")
     record["Result Confidence"] = extra.get("Result Confidence")
+    # Component E — per-row shrink factor for the calibration learning loop (additive).
+    record["Prob Shrink Factor"] = (
+        extra.get("Prob Shrink Factor") if extra.get("Prob Shrink Factor") not in (None, "")
+        else source.get("Prob Shrink Factor")
+    )
     return record
 
 

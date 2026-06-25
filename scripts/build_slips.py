@@ -88,6 +88,15 @@ def _underdog_slip_payouts_enabled() -> bool:
     return _env_bool("ENABLE_UNDERDOG_SLIP_PAYOUTS", False)
 
 
+def _calibrated_probabilities_enabled() -> bool:
+    """Source-level probability calibration stopgap (default OFF).
+
+    When ON, generate_projections already shrank each leg's over_probability at the
+    projection source, so calibration_ratio must NOT shrink a calibrated sport's legs
+    a second time (no double-shrink). Flag OFF => slip math is byte-identical to today."""
+    return _env_bool("USE_CALIBRATED_PROBABILITIES", False)
+
+
 def _ev_margin() -> float:
     raw = _env_value("EV_SLIP_MARGIN")
     if raw is None:
@@ -118,6 +127,20 @@ def calibration_ratio(sport: Any, calibration: dict[str, Any]) -> tuple[float, b
     and trusted=False. raw_ratio is model_implied/empirical (>1 == overconfident).
     """
     sport_key = str(sport or "").upper()
+    # Coordination with the source-level probability calibration stopgap: when
+    # USE_CALIBRATED_PROBABILITIES is on AND this sport's over_probabilities were
+    # already shrunk at projection time (shrink factor < 1.0), the legs are
+    # pre-calibrated — return an identity ratio (trusted) so shrink_probability is a
+    # no-op and we never double-shrink. Sports NOT calibrated at source (e.g.
+    # gate-not-met NBA) fall through to the existing uncalibrated logic below. Lazy,
+    # guarded import: any failure degrades to today's behavior.
+    if _calibrated_probabilities_enabled():
+        try:
+            from calibration import probability_shrink_factor_from_cfg
+            if probability_shrink_factor_from_cfg(calibration or {}, sport_key) < 1.0:
+                return 1.0, True
+        except Exception:
+            pass
     fingerprints = (calibration or {}).get("fingerprints", {}) or {}
     n_with_mop = 0
     fp = fingerprints.get(sport_key)
