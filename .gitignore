@@ -1,4 +1,33 @@
+# ── Secrets (never commit) ───────────────────────────────────────────────
 .env
 *.env
-data/research/*secret*
-data/research/*key*
+*secret*
+*key*
+
+# ── macOS / editor cruft ─────────────────────────────────────────────────
+.DS_Store
+*.swp
+
+# ── Python ───────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# ── Runtime state & generated artifacts ──────────────────────────────────
+# This is a real-money system: data/ holds the live bankroll, P&L ledger,
+# per-day workbooks, betting history, backups, and scraped research. NONE of
+# it is published. Only the two curated reference files below are tracked.
+data/*
+!data/research/
+!data/nxls_schema.txt
+data/research/*
+!data/research/platform_payouts.json
+
+logs/
+locks/
+outputs/
+
+# Local-only synthetic data generated for README screenshots
+demo_data/
+docs/img/*.local.png

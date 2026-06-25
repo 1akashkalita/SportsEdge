@@ -1,0 +1,30 @@
+NBA Picks XLSX Schema (exact format):
+
+SHEET 1 — "Picks"
+Columns: Game | Pick | Line | Best Book | Confidence (A/B/C) | 
+Pick Type | Reasoning | Correlated With | Sources | 
+Time Posted | Status (active/watch/skip)
+
+SHEET 2 — "Player Props"
+Columns: Player | Team | Prop Type | Line | Our Pick | Confidence |
+Book 1 Line | Book 2 Line | Book 3 Line | Best Book |
+Morning Line | Current Line | Movement | Movement Direction |
+Arb Available (Y/N) | Arb Profit % | Correlated Game Pick |
+Reasoning | Sources | Status | Last Updated
+
+SHEET 3 — "Correlated Parlays"
+Columns: Leg 1 | Leg 2 | Leg 3 | Correlation Type | 
+Combined Odds | Confidence | Reasoning
+
+SHEET 4 — "Arb + Middles"
+Columns: Prop/Game | Side A | Book A | Odds A | Side B | Book B | 
+Odds B | Implied Prob Total | Profit % | Bet Size A | Bet Size B | 
+Window Status (open/closed)
+
+SHEET 5 — "Picks to Watch"
+Columns: Pick | Reason Watching | Trigger to Activate | 
+Trigger to Skip | Current Status | Last Checked
+
+SHEET 6 — "CLV Tracker"
+Columns: Date | Game | Pick | Our Line | Closing Line | 
+CLV (+ or -) | Result (W/L/P) | Profit/Loss Units
