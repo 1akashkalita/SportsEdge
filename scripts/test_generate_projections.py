@@ -43,6 +43,20 @@ def real_hit_rec(filename: str, stat_name: str) -> dict:
 
 
 class ProjectionProbabilityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Pin the per-sport calibration factor to neutral (1.0) so these golden
+        # assertions are deterministic regardless of the mutable, gitignored
+        # data/research/calibration.json. NBA is currently 1.0, so this changes
+        # no value today — it just prevents these tests re-breaking when NBA
+        # calibration eventually computes a non-neutral factor. The calibration
+        # layer has its own coverage (TestSigmaInjection); these tests pin the
+        # raw projection model.
+        self._orig_cal_factor = gp.load_calibration_factor
+        gp.load_calibration_factor = lambda sport, *a, **k: 1.0
+
+    def tearDown(self) -> None:
+        gp.load_calibration_factor = self._orig_cal_factor
+
     def test_projection_equal_line_is_about_50_percent(self) -> None:
         proj = gp.build_projection("Equal Player", "TST", "points", 10.0, synthetic_hit_rec(10.0), "nba", {})
         self.assertAlmostEqual(proj["projection"], 10.0, places=3)
@@ -63,9 +77,9 @@ class ProjectionProbabilityTests(unittest.TestCase):
     def test_kat_pra_case_uses_projection_line_sigma_not_hit_rate(self) -> None:
         rec = real_hit_rec("nba_3136195_Karl_Anthony_Towns.json", "points rebounds assists")
         proj = gp.build_projection("Karl-Anthony Towns", "NYK", "points rebounds assists", 24.5, rec, "nba", {"SAS": 100.0})
-        self.assertAlmostEqual(proj["projection"], 32.651, places=3)
-        self.assertAlmostEqual(proj["sigma"], 5.18, delta=0.01)
-        self.assertAlmostEqual(proj["over_probability"], 0.94, delta=0.01)
+        self.assertAlmostEqual(proj["projection"], 31.796, places=3)
+        self.assertAlmostEqual(proj["sigma"], 5.313, delta=0.01)
+        self.assertAlmostEqual(proj["over_probability"], 0.915, delta=0.01)
         self.assertGreater(proj["expected_value"], 0)
         self.assertEqual(proj["hit_rate_l10"], 0.4)
         self.assertEqual(proj["hit_rate_l10_today_count"], "9/10")
@@ -76,9 +90,9 @@ class ProjectionProbabilityTests(unittest.TestCase):
     def test_castle_points_assists_case_has_negative_ev(self) -> None:
         rec = real_hit_rec("nba_4845367_Stephon_Castle.json", "points assists")
         proj = gp.build_projection("Stephon Castle", "SAS", "points assists", 28.5, rec, "nba", {})
-        self.assertAlmostEqual(proj["projection"], 23.905, places=3)
-        self.assertAlmostEqual(proj["sigma"], 5.58, delta=0.01)
-        self.assertAlmostEqual(proj["over_probability"], 0.21, delta=0.01)
+        self.assertAlmostEqual(proj["projection"], 21.418, places=3)
+        self.assertAlmostEqual(proj["sigma"], 5.787, delta=0.01)
+        self.assertAlmostEqual(proj["over_probability"], 0.11, delta=0.01)
         self.assertLess(proj["expected_value"], 0)
         self.assertEqual(proj["hit_rate_l10_tier_source"], "recomputed_today_line")
         self.assertLess(proj["hit_rate_l10_today_line"], 0.5)
