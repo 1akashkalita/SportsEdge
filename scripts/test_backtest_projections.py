@@ -64,6 +64,26 @@ class WalkForwardCoreTests(unittest.TestCase):
         # prediction at i=5 sees only games 0..4 (all 10) -> projection 10, unaffected by the 99 at i=6
         self.assertAlmostEqual(preds[0]["projection"], 10.0, places=3)
 
+    def test_actual_equal_to_line_is_a_push(self):
+        # Discrete stats tie the synthetic median line constantly; a tie is a push
+        # (void), not an "under". over_outcome must be None so binary metrics skip it.
+        doc = player_with_actuals([10.0, 10.0, 10.0, 10.0, 10.0, 10.0], "strikeouts", "mlb")
+        preds = bt.walk_forward_player_stat(doc, "strikeouts", "mlb", min_prior=5)
+        self.assertEqual(len(preds), 1)
+        p = preds[0]
+        self.assertEqual(p["actual"], p["line"])     # 10 == median(10,10,10,10,10)
+        self.assertTrue(p["push"])
+        self.assertIsNone(p["over_outcome"])
+        # PIT and point error are line-outcome-independent and still defined
+        self.assertAlmostEqual(p["pit"], 0.5, places=3)
+        self.assertIsNotNone(p["error"])
+
+    def test_decided_outcomes_are_not_pushes(self):
+        doc = player_with_actuals([10.0, 10.0, 10.0, 10.0, 10.0, 12.0], "strikeouts", "mlb")
+        p = bt.walk_forward_player_stat(doc, "strikeouts", "mlb", min_prior=5)[0]
+        self.assertFalse(p["push"])
+        self.assertEqual(p["over_outcome"], 1)
+
     def test_requires_min_prior_games(self):
         doc = player_with_actuals([10.0, 10.0, 10.0], "strikeouts", "mlb")
         preds = bt.walk_forward_player_stat(doc, "strikeouts", "mlb", min_prior=5)

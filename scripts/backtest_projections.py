@@ -80,6 +80,11 @@ def predict_at(player_doc: dict, stat_name: str, sport: str,
     sigma = float(proj["sigma"])
     safe_sigma = max(0.75, sigma)
     pit = gp.normal_cdf((actual - projection) / safe_sigma)
+    # A tie against the (integer) synthetic line is a PUSH, exactly as a sportsbook
+    # voids it. Discrete stats tie the median ~39% of the time; counting those as
+    # "under" would manufacture huge fake miscalibration. over_outcome is None for a
+    # push so the binary metrics skip it; PIT and point error stay defined.
+    push = float(actual) == float(line)
     return {
         "sport": sport,
         "stat": stat_name,
@@ -90,7 +95,8 @@ def predict_at(player_doc: dict, stat_name: str, sport: str,
         "actual": float(actual),
         "line": line,
         "pit": pit,
-        "over_outcome": 1 if actual > line else 0,
+        "push": push,
+        "over_outcome": None if push else (1 if actual > line else 0),
         "error": projection - actual,
         "confidence_tier": proj.get("confidence_tier"),
         "sample_size": len(prior_games),
