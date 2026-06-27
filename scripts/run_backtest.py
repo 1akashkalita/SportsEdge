@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 import re
+import statistics
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -511,17 +512,12 @@ def rolling_rows(rows: list[dict[str, Any]], report_date: date) -> list[dict[str
 
 
 def phi_correlation_binary(xs: list[int], ys: list[int]) -> float | None:
-    if len(xs) < 2 or len(xs) != len(ys):
+    if len(xs) != len(ys):
         return None
-    n = len(xs)
-    mx = sum(xs) / n
-    my = sum(ys) / n
-    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
-    vx = sum((x - mx) ** 2 for x in xs)
-    vy = sum((y - my) ** 2 for y in ys)
-    if vx == 0 or vy == 0:
+    try:
+        return statistics.correlation(xs, ys)
+    except statistics.StatisticsError:
         return None
-    return cov / math.sqrt(vx * vy)
 
 
 def signal_validation(rows: list[dict[str, Any]]) -> dict[str, Any]:

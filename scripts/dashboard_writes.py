@@ -71,6 +71,41 @@ def ensure_ws_columns(ws: Any, columns: list[str]) -> dict[str, int]:
 # Public write helpers (slips-only, ACTION-02 / ACTION-03)
 # ---------------------------------------------------------------------------
 
+def _update_slip_row(date: str, slip_id: str, mutator: Any, *, label: str) -> None:
+    """Locate the Slip History row keyed by (Date, Slip ID) and apply `mutator`.
+
+    Owns the shared lock/load/ensure-cols/scan/save shell for the public write
+    helpers. `mutator(ws, r, cols)` sets the changed cells on the matched row.
+    `label` names the caller in the not-found RuntimeError. Saves via
+    workbook_io.safe_save_workbook (atomic temp-file swap + zip validation +
+    dated backup). ACTION-04 hard line: only cells the mutator touches change.
+    """
+    master_path = PNL_DIR / "master_pnl.xlsx"
+    date_norm = str(date)[:10]
+
+    with workbook_file_lock(master_path):
+        wb = safe_load_workbook(master_path)
+        ws = wb["Slip History"]
+        cols = ensure_ws_columns(ws, ["Placed", "Placed At", "Operator Note"])
+
+        matched = False
+        for r in range(2, ws.max_row + 1):
+            if (
+                str(ws.cell(r, 1).value or "")[:10] == date_norm
+                and str(ws.cell(r, 2).value or "") == slip_id
+            ):
+                mutator(ws, r, cols)
+                matched = True
+                break
+
+        if not matched:
+            raise RuntimeError(
+                f"{label}: no Slip History row found for date={date!r} slip_id={slip_id!r}"
+            )
+
+        safe_save_workbook(wb, master_path)
+
+
 def mark_placed(date: str, slip_id: str, placed: bool) -> None:
     """Toggle Placed / Placed At on the matching Slip History row in master_pnl.xlsx.
 
@@ -92,31 +127,11 @@ def mark_placed(date: str, slip_id: str, placed: bool) -> None:
         KeyError: if the Slip History sheet is missing from the workbook.
         RuntimeError: if no row matches (date, slip_id).
     """
-    master_path = PNL_DIR / "master_pnl.xlsx"
-    date_norm = str(date)[:10]
+    def _mut(ws: Any, r: int, cols: dict[str, int]) -> None:
+        ws.cell(r, cols["Placed"]).value = placed
+        ws.cell(r, cols["Placed At"]).value = now_utc_iso() if placed else None
 
-    with workbook_file_lock(master_path):
-        wb = safe_load_workbook(master_path)
-        ws = wb["Slip History"]
-        cols = ensure_ws_columns(ws, ["Placed", "Placed At", "Operator Note"])
-
-        matched = False
-        for r in range(2, ws.max_row + 1):
-            if (
-                str(ws.cell(r, 1).value or "")[:10] == date_norm
-                and str(ws.cell(r, 2).value or "") == slip_id
-            ):
-                ws.cell(r, cols["Placed"]).value = placed
-                ws.cell(r, cols["Placed At"]).value = now_utc_iso() if placed else None
-                matched = True
-                break
-
-        if not matched:
-            raise RuntimeError(
-                f"mark_placed: no Slip History row found for date={date!r} slip_id={slip_id!r}"
-            )
-
-        safe_save_workbook(wb, master_path)
+    _update_slip_row(date, slip_id, _mut, label="mark_placed")
 
 
 def add_note(date: str, slip_id: str, note: str) -> None:
@@ -141,27 +156,7 @@ def add_note(date: str, slip_id: str, note: str) -> None:
         KeyError: if the Slip History sheet is missing from the workbook.
         RuntimeError: if no row matches (date, slip_id).
     """
-    master_path = PNL_DIR / "master_pnl.xlsx"
-    date_norm = str(date)[:10]
+    def _mut(ws: Any, r: int, cols: dict[str, int]) -> None:
+        ws.cell(r, cols["Operator Note"]).value = str(note).strip()
 
-    with workbook_file_lock(master_path):
-        wb = safe_load_workbook(master_path)
-        ws = wb["Slip History"]
-        cols = ensure_ws_columns(ws, ["Placed", "Placed At", "Operator Note"])
-
-        matched = False
-        for r in range(2, ws.max_row + 1):
-            if (
-                str(ws.cell(r, 1).value or "")[:10] == date_norm
-                and str(ws.cell(r, 2).value or "") == slip_id
-            ):
-                ws.cell(r, cols["Operator Note"]).value = str(note).strip()
-                matched = True
-                break
-
-        if not matched:
-            raise RuntimeError(
-                f"add_note: no Slip History row found for date={date!r} slip_id={slip_id!r}"
-            )
-
-        safe_save_workbook(wb, master_path)
+    _update_slip_row(date, slip_id, _mut, label="add_note")
