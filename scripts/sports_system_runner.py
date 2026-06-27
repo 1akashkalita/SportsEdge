@@ -649,15 +649,6 @@ def obsidian_sync(payload: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError(f"obsidian_sync failed for {payload.get('trigger')}: {result}")
     return result
 
-def obsidian_ensure_structure() -> None:
-    for d in [
-        OBSIDIAN_DASHBOARD, OBSIDIAN_PICKS / "NBA", OBSIDIAN_PICKS / "MLB",
-        OBSIDIAN_BASE / "Research" / "Teams", OBSIDIAN_RESEARCH_PLAYERS, OBSIDIAN_BASE / "Research" / "Systems",
-        OBSIDIAN_BASE / "Recaps" / "Daily", OBSIDIAN_RECAPS_WEEKLY, OBSIDIAN_INTEL, OBSIDIAN_META,
-    ]:
-        d.mkdir(parents=True, exist_ok=True)
-
-
 def obsidian_path_for_pick_note(sport: str, date: str | None = None) -> Path:
     return OBSIDIAN_PICKS / sport.upper() / f"{date or today_str()}.md"
 
@@ -1156,16 +1147,6 @@ def build_picks_alert(sport: str, result: dict[str, Any]) -> str:
     )
 
 
-def build_line_move_alert(move: dict[str, Any]) -> str:
-    return (
-        f"📈 LINE MOVE: {move.get('player', 'Unknown')} {move.get('stat', 'Unknown')}\n"
-        f"{move.get('old_line', 'unknown')} → {move.get('new_line', 'unknown')}\n"
-        f"Platform: {move.get('platform') or 'unknown'}\n"
-        f"Direction: {move.get('direction', 'watch')}\n"
-        f"Action: {move.get('action', 'watch')}"
-    )
-
-
 def build_line_move_summary_alert(task: str, moves: list[dict[str, Any]], max_items: int = 12) -> str:
     sport = task.split("_", 1)[0].upper()
     shown = moves[:max_items]
@@ -1179,15 +1160,6 @@ def build_line_move_summary_alert(task: str, moves: list[dict[str, Any]], max_it
     if len(moves) > max_items:
         lines.append(f"…and {len(moves) - max_items} more. See workbook/run log for full list.")
     return "\n".join(lines)
-
-
-def build_injury_alert(change: dict[str, Any]) -> str:
-    picks = change.get("affected_picks") or []
-    return (
-        f"🚨 INJURY: {change.get('player', 'Unknown')} {change.get('old_status', 'UNKNOWN')} → {change.get('new_status', 'UNKNOWN')}\n"
-        f"Affected picks: {', '.join(picks) if picks else 'None found'}\n"
-        f"Recommendation: {change.get('recommendation', 'watch')}"
-    )
 
 
 def skipped_picks_summary_for_date(date: str) -> tuple[int, str]:
@@ -1292,14 +1264,6 @@ def dispatch_alerts(task: str, result: dict[str, Any]) -> None:
     elif task == "check_results":
         send_telegram(build_recap_alert(result))
     maybe_rate_limit_alert(result)
-
-
-def _rate_limit_remaining_int(headers: dict[str, Any]) -> int | None:
-    raw = headers.get("x-ratelimit-remaining") or headers.get("credits_remaining")
-    try:
-        return int(str(raw))
-    except Exception:
-        return None
 
 
 def _warn_if_rate_limit_low(headers: dict[str, Any], context: str) -> None:
@@ -3104,10 +3068,6 @@ def _cell_by_header(ws, row_num: int, headers: dict[str, int], name: str, defaul
     return ws.cell(row_num, col).value if col else default
 
 
-def _row_contains_marker(ws, row_num: int, marker: str = GENERATED_MARKER) -> bool:
-    return any(marker in str(ws.cell(row_num, c).value or "") for c in range(1, ws.max_column + 1))
-
-
 def global_daily_exposure(date: str | None = None) -> dict[str, Any]:
     """Return active units at risk today across NBA + MLB without double-counting Props sheet mirrors."""
     date = date or today_str()
@@ -3964,67 +3924,6 @@ def prop_monitor(sport: str) -> dict[str, Any]:
     }
 
 
-def odds_scores(sport: str, days_from: int = 1) -> tuple[list[dict[str, Any]], dict[str, str]]:
-    """Fetch settled/live event scores/status from Odds-API.io events endpoint."""
-    if not os.environ.get("ODDS_API_IO_KEY"):
-        key = env_value("ODDS_API_IO_KEY")
-        if key:
-            os.environ["ODDS_API_IO_KEY"] = key
-    client = OddsApiIoClient(max_retries=2, backoff=2)
-    league, _league_report = resolve_odds_api_io_league(client, sport)
-    res = client.get_events(sport=SPORT_KEYS[sport], league=league, status="live,settled")
-    _warn_if_rate_limit_low(res.get("headers") or {}, f"scores:{sport}")
-    headers = _headers_from_odds_io(res.get("headers") or {})
-    if not res.get("ok"):
-        err = res.get("error") or {}
-        raise RuntimeError(f"Unexpected Odds-API.io scores response for {sport}: {err.get('status_code')} {err.get('message')}")
-    from odds_api_io_client import normalize_event
-    data = [normalize_event(x) for x in (res.get("data") or []) if isinstance(x, dict)]
-    return data, headers
-
-
-def score_map(scores: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    out: dict[str, dict[str, Any]] = {}
-    for game in scores:
-        names = [game.get("home_team"), game.get("away_team")]
-        keys = {str(game.get("id") or "")}
-        keys.add(safe_key(game.get("away_team"), game.get("home_team")))
-        keys.add(safe_key(game.get("home_team"), game.get("away_team")))
-        for name in names:
-            for alias in team_aliases(name):
-                keys.add(alias.lower())
-        for key in keys:
-            if key:
-                out[key] = game
-    return out
-
-
-def find_score_game(row: dict[str, Any], scores_by_key: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
-    gid = str(row.get("Game ID") or "")
-    if gid in scores_by_key:
-        return scores_by_key[gid]
-    away = row.get("Away Team")
-    home = row.get("Home Team")
-    for key in [safe_key(away, home), safe_key(home, away)]:
-        if key in scores_by_key:
-            return scores_by_key[key]
-    # Fallback: match both teams by aliases.
-    away_alias = team_aliases(str(away or ""))
-    home_alias = team_aliases(str(home or ""))
-    for game in set(id(g) for g in scores_by_key.values()):
-        pass
-    seen: set[int] = set()
-    for game in scores_by_key.values():
-        if id(game) in seen:
-            continue
-        seen.add(id(game))
-        gaway = team_aliases(game.get("away_team"))
-        ghome = team_aliases(game.get("home_team"))
-        if away_alias & gaway and home_alias & ghome:
-            return game
-    return None
-
-
 def final_scores(game: dict[str, Any]) -> dict[str, int] | None:
     if not game or not game.get("completed"):
         return None
@@ -4150,67 +4049,6 @@ def espn_scoreboard(sport: str, date: str) -> list[dict[str, Any]]:
         return r.json().get("events", []) or []
     except Exception:
         return []
-
-
-def espn_event_for_teams(events: list[dict[str, Any]], home: str | None, away: str | None) -> str | None:
-    home_alias = team_aliases(home)
-    away_alias = team_aliases(away)
-    for event in events:
-        comps = event.get("competitions", []) or []
-        for comp in comps:
-            teams = []
-            for c in comp.get("competitors", []) or []:
-                team = c.get("team", {}) or {}
-                names = {team.get("displayName"), team.get("shortDisplayName"), team.get("abbreviation"), team.get("name")}
-                teams.append({str(x) for x in names if x})
-            if len(teams) >= 2 and any(home_alias & set().union(*[team_aliases(t) for t in teams[0]])):
-                pass
-            flat = [set().union(*[team_aliases(t) for t in ts]) for ts in teams]
-            if len(flat) >= 2 and ((home_alias & flat[0] and away_alias & flat[1]) or (home_alias & flat[1] and away_alias & flat[0])):
-                return str(event.get("id"))
-    return None
-
-
-def espn_player_stats(sport: str, date: str, home: str | None, away: str | None) -> dict[str, dict[str, float]]:
-    events = espn_scoreboard(sport, date)
-    event_id = espn_event_for_teams(events, home, away)
-    if not event_id:
-        return {}
-    group, league = espn_league_path(sport)
-    url = f"https://site.api.espn.com/apis/site/v2/sports/{group}/{league}/summary"
-    try:
-        r = requests.get(url, params={"event": event_id}, timeout=30)
-        if r.status_code != 200:
-            return {}
-        data = r.json()
-    except Exception:
-        return {}
-    stats: dict[str, dict[str, float]] = {}
-    box = data.get("boxscore", {}) or {}
-    for team in box.get("players", []) or []:
-        for group_data in team.get("statistics", []) or []:
-            labels = group_data.get("labels") or group_data.get("names") or []
-            for athlete in group_data.get("athletes", []) or []:
-                a = athlete.get("athlete", {}) or {}
-                name = a.get("displayName") or a.get("shortName")
-                if not name:
-                    continue
-                values = athlete.get("stats") or []
-                row = stats.setdefault(str(name).lower(), {})
-                for label, value in zip(labels, values):
-                    num = to_float(str(value).split('-')[0] if isinstance(value, str) and '-' in value and label in ("3PT", "FG", "FT") else value)
-                    if num is not None:
-                        row[str(label).lower()] = num
-                # ESPN NBA common derived aliases.
-                if "pts" in row:
-                    row["points"] = row.get("pts", 0)
-                if "reb" in row:
-                    row["rebounds"] = row.get("reb", 0)
-                if "ast" in row:
-                    row["assists"] = row.get("ast", 0)
-                if "3pt" in row:
-                    row["3-pt made"] = row.get("3pt", 0)
-    return stats
 
 
 def _innings_to_outs_grading(v: Any) -> float | None:
@@ -6817,12 +6655,6 @@ def espn_game_list(sport: str, date: str) -> list[dict[str, Any]]:
     return games
 
 
-def odds_scores(sport: str, days_from: int = 1) -> tuple[list[dict[str, Any]], dict[str, str]]:
-    """Use ESPN public scoreboard for final score grading; signature kept for callers."""
-    games = espn_game_list(sport, today_str())
-    return games, {"status_code": "200", "credits_remaining": "espn_public_no_key", "credits_used": "0"}
-
-
 def parse_espn_injuries_payload(sport: str, payload: dict[str, Any], source: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for team_block in payload.get("injuries", []) or []:
@@ -7354,18 +7186,6 @@ def espn_player_stats_by_event(sport: str, event_id: str, attach_team: bool = Fa
                     bat_sub["_hit_counts"] = hc  # type: ignore[assignment]
 
     return stats
-
-
-def espn_player_stats(sport: str, date: str, home: str | None, away: str | None) -> dict[str, dict[str, float]]:
-    events = espn_game_list(sport, date)
-    event_id = espn_event_for_teams(events, home, away)
-    if not event_id:
-        # game_list dicts are already normalized; match manually if old helper misses.
-        for g in events:
-            if team_aliases(home) & team_aliases(g.get("home_team")) and team_aliases(away) & team_aliases(g.get("away_team")):
-                event_id = g.get("event_id")
-                break
-    return espn_player_stats_by_event(sport, str(event_id or ""))
 
 
 

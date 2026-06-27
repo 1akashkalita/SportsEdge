@@ -408,7 +408,6 @@ def slip_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "by_slip_type": group("Slip Type"),
         "by_number_of_legs": group("Number of Legs"),
         "by_platform": group("Platform"),
-        "power_vs_flex": group("Slip Type"),
         "unreconciled_special_line_count": sum(1 for r in rows if r.get("Needs Payout Reconciliation") and (r.get("Contains Demon") or r.get("Contains Goblin"))),
         "standard_exact_slips": sum(1 for r in rows if not r.get("Contains Demon") and not r.get("Contains Goblin") and not r.get("Needs Payout Reconciliation")),
         "exact_manual_reconciled_special_slips": sum(1 for r in rows if (r.get("Contains Demon") or r.get("Contains Goblin")) and str(r.get("Payout Confidence") or "") == "exact_manual"),

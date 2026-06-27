@@ -139,48 +139,6 @@ def display_book(value: str) -> str:
     return str(value or "")
 
 
-def parse_bookmaker_mapping(bookmakers_payload: Any, sports_payload: Any | None = None) -> dict[str, Any]:
-    rows = bookmakers_payload if isinstance(bookmakers_payload, list) else (bookmakers_payload or {}).get("data") or (bookmakers_payload or {}).get("bookmakers") or []
-    sports = sports_payload if isinstance(sports_payload, list) else (sports_payload or {}).get("data") or (sports_payload or {}).get("sports") or []
-    out = {"generated_at": datetime.now(timezone.utc).isoformat(), "targets": {}, "ambiguity": []}
-    for target in ("FanDuel", "DraftKings"):
-        matches = []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            name = str(row.get("name") or row.get("displayName") or row.get("title") or row.get("slug") or row.get("id") or "")
-            slug = str(row.get("slug") or row.get("id") or row.get("key") or name)
-            blob = json.dumps(row).lower()
-            if norm_book(target) in norm_book(name) or norm_book(target) in norm_book(slug) or norm_book(target) in norm_book(blob):
-                matches.append(row)
-        exact = None
-        for row in matches:
-            name = str(row.get("name") or row.get("displayName") or row.get("title") or "")
-            if norm_book(name) == norm_book(target):
-                exact = row
-                break
-        row = exact or (matches[0] if matches else {})
-        display = row.get("name") or row.get("displayName") or row.get("title") or target if isinstance(row, dict) else target
-        slug = row.get("slug") or row.get("id") or row.get("key") or display if isinstance(row, dict) else target
-        available_sports = row.get("sports") or row.get("availableSports") or row.get("leagues") or [] if isinstance(row, dict) else []
-        sports_text = json.dumps(available_sports).lower()
-        out["targets"][target] = {
-            "display_name": display,
-            "api_identifier": slug,
-            "active": row.get("active") if isinstance(row, dict) else None,
-            "available_sports": available_sports,
-            "supports_nba": ("nba" in sports_text or "basketball" in sports_text) if available_sports else None,
-            "supports_mlb": ("mlb" in sports_text or "baseball" in sports_text) if available_sports else None,
-            "raw_fields_returned": sorted(row.keys()) if isinstance(row, dict) else [],
-            "match_count": len(matches),
-            "available": bool(row),
-        }
-        if len(matches) != 1:
-            out["ambiguity"].append({"target": target, "match_count": len(matches), "matches": sanitize_api_key(matches[:5])})
-    out["sports_payload_sample"] = sanitize_api_key(sports[:10] if isinstance(sports, list) else sports)
-    return out
-
-
 def flatten_event_odds(event: dict[str, Any], sport: str = "") -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     event_id = event.get("id") or event.get("event_id")

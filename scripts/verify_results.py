@@ -377,18 +377,6 @@ def _parse_nba_row(
     return raw_name, stats
 
 
-def _section_is_batting(text_before_table: str) -> bool:
-    """Return True if the section heading preceding a table indicates batting."""
-    lower = text_before_table.lower()
-    return "batting" in lower
-
-
-def _section_is_pitching(text_before_table: str) -> bool:
-    """Return True if the section heading preceding a table indicates pitching."""
-    lower = text_before_table.lower()
-    return "pitching" in lower
-
-
 def parse_espn_box_markdown(md_text: str) -> dict[str, dict[str, Any]]:
     """Parse ESPN box score markdown into {canonical_name: {stat_key: float}}.
 

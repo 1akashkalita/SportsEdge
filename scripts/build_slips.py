@@ -82,12 +82,6 @@ def _ev_slip_type_enabled() -> bool:
     return _env_bool("ENABLE_EV_SLIP_TYPE", False)
 
 
-def _underdog_slip_payouts_enabled() -> bool:
-    """Reserved morning toggle. No-op while the Underdog payout table is empty;
-    read so the flag exists. Underdog slips must behave exactly as today."""
-    return _env_bool("ENABLE_UNDERDOG_SLIP_PAYOUTS", False)
-
-
 def _calibrated_probabilities_enabled() -> bool:
     """Source-level probability calibration stopgap (default OFF).
 
