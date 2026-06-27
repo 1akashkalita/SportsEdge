@@ -26,10 +26,6 @@ PLAYER_PROP_DISABLED_MESSAGE = "Odds-API.io player props disabled; PrizePicks re
 ODDS_API_IO_RATE_LIMIT_OPTIONAL_SKIP_REMAINING = int(os.environ.get("ODDS_API_IO_RATE_LIMIT_OPTIONAL_SKIP_REMAINING", "25"))
 ODDS_API_IO_RATE_LIMIT_CRITICAL_REMAINING = int(os.environ.get("ODDS_API_IO_RATE_LIMIT_CRITICAL_REMAINING", "10"))
 ODDS_API_IO_RATE_LIMIT_RESET_SOON_MINUTES = int(os.environ.get("ODDS_API_IO_RATE_LIMIT_RESET_SOON_MINUTES", "10"))
-OPTIONAL_DIAGNOSTIC_SKIP_MESSAGE = (
-    "Odds-API.io optional diagnostics skipped: remaining credits are low and reset is not soon; "
-    "preserving required game-market fetches."
-)
 GAME_MARKET_ALIASES = {
     "h2h": {"ML", "Moneyline", "Match Winner", "Match Result"},
     "spreads": {"Spread", "Asian Handicap", "Handicap"},
@@ -216,9 +212,6 @@ class OddsApiIoClient:
     def get_sports(self) -> dict[str, Any]:
         return self._request("GET", "/sports", auth=False)
 
-    def get_bookmakers(self) -> dict[str, Any]:
-        return self._request("GET", "/bookmakers", auth=True)
-
     def get_leagues(self, sport: str | None = None) -> dict[str, Any]:
         if not sport:
             # Convenience for callers: docs require sport, so discover sports then fetch each league list.
@@ -252,13 +245,6 @@ class OddsApiIoClient:
             params["from"] = f"{date}T00:00:00Z" if len(date) == 10 else date
             params["to"] = f"{date}T23:59:59Z" if len(date) == 10 else date
         return self._request("GET", "/events", params)
-
-    def get_live_events(self, sport: str | None = None, league: str | None = None) -> dict[str, Any]:
-        params: dict[str, Any] = {}
-        if sport:
-            params["sport"] = sport
-        # Docs list sport only for /events/live; league is accepted by signature but not sent unless future docs add it.
-        return self._request("GET", "/events/live", params)
 
     def get_odds(self, event_id: Any, markets: str | Iterable[str] = "h2h,spreads,totals", bookmakers: str | Iterable[str] | None = None) -> dict[str, Any]:
         if self._contains_player_prop_market(markets):
@@ -306,83 +292,8 @@ class OddsApiIoClient:
             return self.get_odds(ids[0], markets=markets, bookmakers=bookmakers) if ids else {"ok": True, "data": [], "headers": dict(self.rate_limit_state), "error": None, "diagnostics": dict(self.diagnostics)}
         return self.get_odds_multi(ids, markets=markets, bookmakers=bookmakers)
 
-    def get_odds_movements(self, event_id: Any, market: str, bookmaker: str | None = None, marketLine: Any | None = None) -> dict[str, Any]:
-        params = {"eventId": event_id, "bookmaker": bookmaker or self._bookmakers(None).split(",")[0], "market": odds_io_market_name(market)}
-        if marketLine is not None:
-            params["marketLine"] = marketLine
-        return self._request("GET", "/odds/movements", params)
-
-    def get_value_bets(self, bookmaker: str | None = None, sport: str | None = None, league: str | None = None, includeEventDetails: bool = True) -> dict[str, Any]:
-        if not self.can_run_optional_diagnostics():
-            return self.optional_diagnostics_skipped_response("/value-bets")
-        params: dict[str, Any] = {"bookmaker": bookmaker or self._bookmakers(None).split(",")[0], "includeEventDetails": str(includeEventDetails).lower()}
-        if sport:
-            params["sport"] = sport
-        if league:
-            params["league"] = league
-        return self._request("GET", "/value-bets", params)
-
-    def get_arbitrage_bets(self, bookmakers: str | Iterable[str] | None = None, limit: int = 50, includeEventDetails: bool = True) -> dict[str, Any]:
-        if not self.can_run_optional_diagnostics():
-            return self.optional_diagnostics_skipped_response("/arbitrage-bets")
-        return self._request("GET", "/arbitrage-bets", {"bookmakers": self._bookmakers(bookmakers), "limit": limit, "includeEventDetails": str(includeEventDetails).lower()})
-
-    def get_dropping_odds(self, sport: str | None = None, league: str | None = None, markets: str | None = None, limit: int = 50) -> dict[str, Any]:
-        if not self.can_run_optional_diagnostics():
-            return self.optional_diagnostics_skipped_response("/dropping-odds")
-        params: dict[str, Any] = {"limit": limit}
-        if sport:
-            params["sport"] = sport
-        if league:
-            params["league"] = league
-        if markets:
-            params["markets"] = markets
-        return self._request("GET", "/dropping-odds", params)
-
     def get_rate_limit_state(self) -> dict[str, Any]:
         return dict(self.rate_limit_state)
-
-    def rate_limit_remaining_int(self) -> int | None:
-        return _parse_rate_limit_int(self.rate_limit_state.get("x-ratelimit-remaining"))
-
-    def rate_limit_snapshot(self) -> dict[str, Any]:
-        return rate_limit_snapshot(self.rate_limit_state)
-
-    def can_run_optional_diagnostics(self) -> bool:
-        return not self.rate_limit_snapshot()["skip_optional"]
-
-    def optional_diagnostics_skipped_response(self, path: str) -> dict[str, Any]:
-        snapshot = self.rate_limit_snapshot()
-        minutes = snapshot.get("minutes_until_reset")
-        self.logger.warning(
-            "%s remaining=%s limit=%s reset=%s minutes_until_reset=%s usage_pressure=%s action=%s path=%s",
-            OPTIONAL_DIAGNOSTIC_SKIP_MESSAGE,
-            snapshot.get("remaining"),
-            snapshot.get("limit"),
-            snapshot.get("reset"),
-            round(minutes, 2) if minutes is not None else None,
-            round(snapshot.get("usage_pressure"), 4) if snapshot.get("usage_pressure") is not None else None,
-            snapshot.get("action"),
-            path,
-        )
-        return {
-            "ok": False,
-            "data": None,
-            "headers": dict(self.rate_limit_state),
-            "error": {
-                "type": "rate_limit_optional_skip",
-                "status_code": "SKIPPED",
-                "message": OPTIONAL_DIAGNOSTIC_SKIP_MESSAGE,
-                "retryable": False,
-                "path": path,
-                "remaining": snapshot.get("remaining"),
-                "limit": snapshot.get("limit"),
-                "reset": snapshot.get("reset"),
-                "minutes_until_reset": minutes,
-                "usage_pressure": snapshot.get("usage_pressure"),
-                "action": snapshot.get("action"),
-            },
-        }
 
     def disabled_player_props_response(self) -> dict[str, Any]:
         self.diagnostics["player_prop_requests_blocked"] += 1
@@ -421,17 +332,6 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
     if isinstance(scores, dict) and "home" in scores and "away" in scores:
         out["scores"] = [{"name": home, "score": scores.get("home")}, {"name": away, "score": scores.get("away")}]
     return out
-
-
-def odds_io_market_name(market: str) -> str:
-    m = str(market or "").lower()
-    if m == "h2h":
-        return "ML"
-    if m == "spreads":
-        return "Spread"
-    if m == "totals":
-        return "Totals"
-    return market
 
 
 def normalize_price(value: Any) -> Any:
@@ -477,10 +377,6 @@ def normalize_event_odds(event: dict[str, Any], requested_markets: str | Iterabl
         bookmakers = raw_books
     out["bookmakers"] = bookmakers
     return out
-
-
-def disabled_player_prop_odds(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    return {"ok": False, "data": None, "headers": {}, "error": {"type": "disabled", "status_code": "DISABLED", "message": PLAYER_PROP_DISABLED_MESSAGE, "retryable": False}}
 
 
 if __name__ == "__main__":

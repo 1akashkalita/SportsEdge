@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from odds_api_io_client import (
     OddsApiIoClient,
     PLAYER_PROP_DISABLED_MESSAGE,
-    disabled_player_prop_odds,
     normalize_event,
     normalize_event_odds,
     rate_limit_snapshot,
@@ -126,13 +125,6 @@ class OddsApiIoClientTests(unittest.TestCase):
         self.assertEqual(len(res["data"]), 2)
         self.assertEqual(c.session.calls[0]["url"].split("/v3")[-1], "/odds/multi")
 
-    def test_movements_response_parsing(self):
-        data = {"eventid": "123", "bookmaker": "Bet365", "opening": {"home": 2.0}, "latest": {"home": 2.1}, "movements": []}
-        c = self.client([FakeResponse(data=data)])
-        res = c.get_odds_movements(123, "h2h")
-        self.assertEqual(res["data"]["eventid"], "123")
-        self.assertEqual(c.session.calls[0]["params"]["market"], "ML")
-
     def test_rate_limit_header_parsing(self):
         c = self.client([FakeResponse(data=[])])
         c.get_sports()
@@ -150,61 +142,27 @@ class OddsApiIoClientTests(unittest.TestCase):
         snap = rate_limit_snapshot(self.rate_headers(55, 5))
         self.assertEqual(snap["severity"], "OK")
         self.assertFalse(snap["skip_optional"])
-        c = self.client([])
-        c.rate_limit_state = self.rate_headers(55, 5)
-        self.assertTrue(c.can_run_optional_diagnostics())
 
     def test_rate_limit_55_reset_far_no_warning_if_above_25(self):
         snap = rate_limit_snapshot(self.rate_headers(55, 50))
         self.assertEqual(snap["severity"], "OK")
         self.assertFalse(snap["skip_optional"])
-        c = self.client([])
-        c.rate_limit_state = self.rate_headers(55, 50)
-        self.assertTrue(c.can_run_optional_diagnostics())
 
     def test_rate_limit_20_reset_far_warns_and_skips_optional_diagnostics(self):
-        headers = self.rate_headers(20, 30)
-        snap = rate_limit_snapshot(headers)
+        snap = rate_limit_snapshot(self.rate_headers(20, 30))
         self.assertEqual(snap["severity"], "WARNING")
         self.assertTrue(snap["skip_optional"])
-        c = self.client([])
-        c.rate_limit_state = headers
-        with self.assertLogs("odds_api_io", level="WARNING") as logs:
-            res = c.get_value_bets()
-        self.assertFalse(res["ok"])
-        self.assertEqual(res["error"]["type"], "rate_limit_optional_skip")
-        self.assertEqual(len(c.session.calls), 0)
-        self.assertIn("remaining=20", "\n".join(logs.output))
-        self.assertIn("action=skip_optional_diagnostics", "\n".join(logs.output))
 
     def test_rate_limit_20_reset_soon_info_only_allows_optional_diagnostics(self):
-        headers = self.rate_headers(20, 5)
-        snap = rate_limit_snapshot(headers)
+        snap = rate_limit_snapshot(self.rate_headers(20, 5))
         self.assertEqual(snap["severity"], "INFO")
         self.assertFalse(snap["skip_optional"])
-        c = self.client([FakeResponse(data=[])])
-        c.rate_limit_state = headers
-        res = c.get_value_bets()
-        self.assertTrue(res["ok"])
-        self.assertEqual(len(c.session.calls), 1)
 
     def test_rate_limit_5_is_critical_and_skips_optional_diagnostics(self):
-        headers = self.rate_headers(5, 5)
-        snap = rate_limit_snapshot(headers)
+        snap = rate_limit_snapshot(self.rate_headers(5, 5))
         self.assertEqual(snap["severity"], "CRITICAL")
         self.assertTrue(snap["critical"])
         self.assertTrue(snap["skip_optional"])
-        c = self.client([])
-        c.rate_limit_state = headers
-        res = c.get_arbitrage_bets()
-        self.assertFalse(res["ok"])
-        self.assertEqual(res["error"]["action"], "preserve_only_required_fetches")
-        self.assertEqual(len(c.session.calls), 0)
-
-    def test_old_player_prop_call_path_is_disabled(self):
-        res = disabled_player_prop_odds()
-        self.assertFalse(res["ok"])
-        self.assertIn("PrizePicks", res["error"]["message"])
 
     def test_player_props_never_routed_through_odds_api_io_or_multi(self):
         c = self.client([])
@@ -260,13 +218,6 @@ class OddsApiIoClientTests(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertEqual(res["error"]["status_code"], 404)
         self.assertIn("retryable", res["error"])
-
-    def test_get_bookmakers_uses_api_key_query_auth(self):
-        c = self.client([FakeResponse(data=[{"name": "FanDuel", "active": True}, {"name": "DraftKings", "active": True}])])
-        res = c.get_bookmakers()
-        self.assertTrue(res["ok"])
-        self.assertIn("apiKey", c.session.calls[0]["params"])
-        self.assertEqual(res["data"][0]["name"], "FanDuel")
 
     def test_bookmakers_are_capped_to_two_active_books(self):
         c = self.client([FakeResponse(data=[SAMPLE_ODDS, SAMPLE_ODDS])])

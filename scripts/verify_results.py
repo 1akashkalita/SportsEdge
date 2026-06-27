@@ -393,49 +393,7 @@ def parse_espn_box_markdown(md_text: str) -> dict[str, dict[str, Any]]:
     if not tables:
         return {}
 
-    # Split the markdown into lines to associate section headers with tables
-    lines = md_text.splitlines()
-    line_positions: list[str] = lines  # for looking up context near each table
-
-    # Rebuild sections: for each table, find the nearest preceding heading
-    table_contexts: list[str] = []
-    current_context = ""
-    # Walk line by line and associate headings with tables by position
-    raw_tables_positions: list[int] = []
-    i = 0
-    heading_contexts: list[tuple[int, str]] = []
-    while i < len(lines):
-        line = lines[i].strip()
-        if re.match(r"^#{1,4}\s+", line):
-            heading_text = re.sub(r"^#{1,4}\s+", "", line)
-            heading_contexts.append((i, heading_text))
-        i += 1
-
-    # Now for each table, find the last heading before it
-    table_line_starts: list[int] = []
-    raw_md = md_text
     for hdrs, rows in tables:
-        # Estimate position by searching for first header cell text
-        if hdrs:
-            search_str = hdrs[0]
-            idx = raw_md.find(f"| {search_str}")
-            if idx < 0:
-                idx = raw_md.find(f"|{search_str}")
-            table_line_starts.append(idx)
-        else:
-            table_line_starts.append(-1)
-
-    for t_idx, (hdrs, rows) in enumerate(tables):
-        tbl_char_pos = table_line_starts[t_idx]
-        # Find last heading before this table position
-        ctx = ""
-        if tbl_char_pos >= 0:
-            for (_, heading_text) in reversed(heading_contexts):
-                # Find position of this heading in raw_md
-                pos = raw_md.find(heading_text)
-                if pos >= 0 and pos < tbl_char_pos:
-                    ctx = heading_text
-                    break
         tbl_type = _detect_table_type(hdrs)
         if tbl_type == "mlb_batting":
             for cells in rows:

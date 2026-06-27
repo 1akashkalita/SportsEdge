@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from slip_payouts import (
     calculate_slip_payout,
-    pick_history_rows_count_for_bankroll,
     payout_multiplier,
 )
 
@@ -89,14 +88,6 @@ class TestSlipPayouts(unittest.TestCase):
         )
         self.assertTrue(result["manual_review"])
         self.assertEqual(result["slip_result"], "MANUAL REVIEW")
-
-    def test_pick_history_leg_rows_do_not_double_count_bankroll(self):
-        rows = [
-            {"Slip ID": "S1", "PnL": 0.909},
-            {"Slip ID": "S1", "PnL": -1.0},
-            {"Slip ID": "", "PnL": 0.909},
-        ]
-        self.assertEqual(pick_history_rows_count_for_bankroll(rows), 1)
 
     def test_prizepicks_has_no_two_leg_flex_table(self):
         # PrizePicks offers no 2-leg flex; the EV slip-type chooser relies on this

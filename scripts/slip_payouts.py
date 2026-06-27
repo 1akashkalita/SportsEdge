@@ -170,16 +170,6 @@ def calculate_slip_payout(
     }
 
 
-def pick_history_rows_count_for_bankroll(rows: Iterable[dict[str, Any]]) -> int:
-    """Rows with Slip ID are leg-level only and must not feed bankroll PnL."""
-    count = 0
-    for row in rows:
-        slip_id = row.get("Slip ID") if "Slip ID" in row else row.get("slip_id")
-        if not str(slip_id or "").strip():
-            count += 1
-    return count
-
-
 def now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
